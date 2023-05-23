@@ -5,11 +5,6 @@ import spinal.lib._
 
 import scala.collection.mutable
 
-// use a Stageable to record a signal in pipeline
-// a signal insert from a certain plugin, input into pipeline and output on posedge clk
-class Stageable[T <: Data](dataType: => T) extends HardType[T](dataType) with Nameable {
-  setWeakName(this.getClass.getSimpleName.replace("$", ""))
-}
 
 // use Stage to record a stage, such as IF ID EX MEM WB
 class Stage() extends Area {
@@ -29,76 +24,37 @@ class Stage() extends Area {
     return ret
   }
 
-  // inserts records signals' initial value
-  val inserts = mutable.LinkedHashMap[Stageable[Data], Data]()
-  def insert[T <: Data](key: Stageable[T]): T = {
-    val keyMap = key.asInstanceOf[Stageable[Data]]
+  val inserts = mutable.LinkedHashMap[Signal[Data], Data]()
+  def insert[T <: Data](key: Signal[T]): T = {
     inserts.getOrElseUpdate(
-      keyMap,
+      key.asInstanceOf[Signal[Data]],
       gen(key())
     ).asInstanceOf[T]
   }
 
-  // asInstanceOf: type casting
-
-  // inputs records pipeline's input
-  val inputs = mutable.LinkedHashMap[Stageable[Data], Data]()
-  // inputsDefault init inputs in order to solve LATCH DETECTED problem
-  val inputsDefault = mutable.LinkedHashMap[Stageable[Data], Data]()
-  def input[T <: Data](key: Stageable[T]): T = {
-    val keyMap = key.asInstanceOf[Stageable[Data]]
+  val inputs = mutable.LinkedHashMap[Signal[Data], Data]()
+  def input[T <: Data](key: Signal[T]): T = {
     inputs.getOrElseUpdate(
-      keyMap,
-      gen {
-        val input, inputDefault = key()
-        inputsDefault(keyMap) = inputDefault
-        input := inputDefault
-        return input
-      }
+      key.asInstanceOf[Signal[Data]],
+      gen(key())
     ).asInstanceOf[T]
   }
 
-  // outputs records pipeline's output
-  val outputs = mutable.LinkedHashMap[Stageable[Data], Data]()
-  // outputsDefault init inputs in order to solve LATCH DETECTED problem
-  val outputsDefault = mutable.LinkedHashMap[Stageable[Data], Data]()
-  def output[T <: Data](key: Stageable[T]): T = {
-    val keyMap = key.asInstanceOf[Stageable[Data]]
+  val outputs = mutable.LinkedHashMap[Signal[Data], Data]()
+  def output[T <: Data](key: Signal[T]): T = {
     outputs.getOrElseUpdate(
-      keyMap,
-      gen {
-        val output, outputDefault = key()
-        outputsDefault(keyMap) = outputDefault
-        output := outputDefault
-        return output
-      }
+      key.asInstanceOf[Signal[Data]],
+      gen(key())
     ).asInstanceOf[T]
   }
 
-  val arbitration = new Area {
-    // stop the inst by itself
-    val stopCur = False
-    // stop the inst by other inst
-    val stopByOther = False
-    // remove current inst
-    val removeCur = False
-    // flush the current inst and above inst
-    val flushCur = False
-    // flush above inst
-    val flushNext = False
-    // current pipeline is valid
-    val isValid = Bool
-    // stuck or not
-    val isStuck = Bool
-    // stuck by others or not
-    val isStuckByOthers = Bool
-
-    val isRemoved = removeCur
-    // flush current inst or not
+  val pipelineSignal = new Area {
+    val flush = Bool
+    val stall = Bool
     val isFlushed = Bool
-    //
+    val isStalled = Bool
+    val isValid = Bool
     val isMoving = Bool
-    //
     val isFiring = Bool
   }
 }

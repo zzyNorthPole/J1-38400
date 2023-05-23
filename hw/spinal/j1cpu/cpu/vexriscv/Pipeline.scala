@@ -12,7 +12,7 @@ trait Pipeline {
 
   def service[T](clazz: Class[T]): T = {
     val filtered = plugins.filter(tmp => (tmp.getClass == clazz))
-    return filtered.head.asInstanceOf[T]
+    filtered.head.asInstanceOf[T]
   }
 
   def buildPlugins() = {
@@ -34,32 +34,33 @@ trait Pipeline {
 
   def preStage(stage: Stage) = stages(stageId(stage) - 1)
 
-  def sufStage(stage: Stage) = stages(stageId(stage) + 1)
+  def nxtStage(stage: Stage) = stages(stageId(stage) + 1)
 
   def newStage(): Stage = {
     val stage = new Stage()
     stages += stage
-    return stage
+    stage
   }
 
-  def buildArbitration() = {
+  def buildPipelineSignal() = {
     for (i <- 0 until stages.length; stage = stages(i)) {
-      // flushNext & flushCur => isFlushed (<-)
-      stage.arbitration.isFlushed :=
-        stages.drop(i + 1).map(_.arbitration.flushNext).orR || stages.drop(i).map(_.arbitration.flushCur).orR
-      stage.arbitration.removeCur := stage.arbitration.isFlushed
-      // isStuck(i+1...) & stopByOther => isStuckByOthers (<-)
-      stage.arbitration.isStuckByOthers :=
-        stage.arbitration.stopByOther || stages.drop(i + 1).map(_.arbitration.isStuck).orR
-      // isStuckByOthers & stopCur => isStuck (<-)
-      stage.arbitration.isStuck := stage.arbitration.stopCur || stage.arbitration.isStuckByOthers
-      // isStuck && removeCur => isMoving (<-)
-      stage.arbitration.isMoving := !stage.arbitration.isStuck && !stage.arbitration.removeCur
+      // isFlushed && flush => isFlushed (<-)
+      if (i + 1 == stages.length)
+        stage.pipelineSignal.isFlushed := stage.pipelineSignal.flush
+      else
+        stage.pipelineSignal.isFlushed := stage.pipelineSignal.flush || nxtStage(stage).pipelineSignal.isFlushed
+      // isStalled && stall => isStalled (<-)
+      if (i + 1 == stages.length)
+        stage.pipelineSignal.isStalled := stage.pipelineSignal.stall
+      else
+        stage.pipelineSignal.isStalled := stage.pipelineSignal.stall || nxtStage(stage).pipelineSignal.isStalled
+      // isStalled && isFlushed => isMoving (<-)
+      stage.pipelineSignal.isMoving := !stage.pipelineSignal.isStalled && !stage.pipelineSignal.isFlushed
       // isMoving && isValid => isFiring (<-)
-      stage.arbitration.isFiring := stage.arbitration.isValid && stage.arbitration.isMoving
+      stage.pipelineSignal.isFiring := stage.pipelineSignal.isValid && stage.pipelineSignal.isMoving
       // reg!!! isStuck && removeCur => isValid (->)
       if (i > 0) {
-        stage.arbitration.isValid.setAsReg() init(False)
+        stage.pipelineSignal.isValid.setAsReg() init(False)
         // when current inst is flushed, it will jump to the second position and be set false
         // when current inst is stuck, it won't be changed
         // when current inst isn't stuck:
@@ -67,110 +68,121 @@ trait Pipeline {
         // if previous inst is stuck, it will jump to the second position and be set false
         // if previous inst isn't stuck, it will be set to the previous value
         // What an excellent design!
-        when (!preStage(stage).arbitration.isStuck && !preStage(stage).arbitration.removeCur) {
-          stage.arbitration.isValid := preStage(stage).arbitration.isValid
-        } .elsewhen (!stage.arbitration.isStuck || stage.arbitration.removeCur) {
-          stage.arbitration.isValid := False
+        when (!preStage(stage).pipelineSignal.isStalled && !preStage(stage).pipelineSignal.isFlushed) {
+          stage.pipelineSignal.isValid := preStage(stage).pipelineSignal.isValid
+        } .elsewhen (!stage.pipelineSignal.isStalled || stage.pipelineSignal.isFlushed) {
+          stage.pipelineSignal.isValid := False
         }
       }
       else {
         // TODO: ensure fetch behavior
-        stage.arbitration.isValid.setAsReg() init(True)
-        when (stage.arbitration.removeCur) {
-          stage.arbitration.isValid := False
+        stage.pipelineSignal.isValid.setAsReg() init(True)
+        when (stage.pipelineSignal.isFlushed) {
+          stage.pipelineSignal.isValid := False
         }
-        when (!stage.arbitration.isStuck) {
-          stage.arbitration.isValid := True
+        when (!stage.pipelineSignal.isStalled) {
+          stage.pipelineSignal.isValid := True
         }
       }
     }
   }
 
-  def buildPipelineSignal() = {
-    class KeyInfo {
-      var insertStageId = Int.MaxValue
-      var lastInputStageId = Int.MinValue
-      var lastOutputStageId = Int.MinValue
+  def buildSignal() = {
+    System.out.println("Begin")
+    class SignalDescription {
+      var insertId = Int.MaxValue
+      var lastInputId = Int.MinValue
+      var lastOutputId = Int.MinValue
 
-      def setInsertStageId(stageId: Int) = {
-        insertStageId = stageId
+      def setInsertId(stageId: Int) = {
+        insertId = stageId
       }
 
-      def addInputStageId(stageId: Int) = {
-        require(stageId >= insertStageId)
-        lastInputStageId = Math.max(lastInputStageId, stageId)
-        lastOutputStageId = Math.max(lastOutputStageId, stageId - 1)
+      def updInputId(stageId: Int) = {
+        lastInputId = Math.max(stageId, lastInputId)
       }
 
-      def addOutputStageId(stageId: Int) = {
-        require(stageId >= insertStageId)
-        lastOutputStageId = Math.max(lastOutputStageId, stageId)
-        lastInputStageId = Math.max(lastInputStageId, stageId)
+      def updOutputId(stageId: Int) = {
+        lastOutputId = Math.max(stageId, lastOutputId)
       }
     }
 
-    val inputOutputKeys = mutable.LinkedHashMap[Stageable[Data], KeyInfo]()
-    val insertStageable = mutable.Set[Stageable[Data]]()
+    val inputOutputInfo = mutable.LinkedHashMap[Signal[Data], SignalDescription]()
+    val insertSignal = mutable.Set[Signal[Data]]()
     // make INSERT and confirm the passing stage of each signal
     for (i <- 0 until stages.length; stage = stages(i)) {
-      stage.inserts.keysIterator.foreach(
-        signal =>
-          inputOutputKeys.getOrElseUpdate(signal, new KeyInfo).setInsertStageId(i)
-      )
-      stage.inserts.keysIterator.foreach(
-        insertStageable += _
-      )
-    }
-    // check whether some signal be ignore
-    val missingInserts = mutable.Set[Stageable[Data]]()
-    for (i <- 0 until stages.length; stage = stages(i)) {
-      stage.inputs.keysIterator.foreach(
-        key =>
-          if (!insertStageable.contains(key)) missingInserts += key
-      )
-      stage.outputs.keysIterator.foreach(
-        key =>
-          if (!insertStageable.contains(key)) missingInserts += key
-      )
-    }
-    if (missingInserts.nonEmpty) {
-      throw new Exception("Missing inserts: " + missingInserts.map(_.getName()).mkString(", "))
+      stage.inserts.keysIterator.foreach {
+        signal => {
+          inputOutputInfo.getOrElseUpdate(
+            signal,
+            new SignalDescription
+          ).setInsertId(i)
+          insertSignal += signal
+        }
+      }
     }
 
     for (i <- 0 until stages.length; stage = stages(i)) {
       stage.inputs.keysIterator.foreach(
-        key =>
-          inputOutputKeys.getOrElseUpdate(key, new KeyInfo).addInputStageId(i)
+        signal => {
+          inputOutputInfo.getOrElseUpdate(
+            signal,
+            new SignalDescription
+          ).updInputId(i)
+        }
       )
       stage.outputs.keysIterator.foreach(
-        key =>
-          inputOutputKeys.getOrElseUpdate(key, new KeyInfo).addOutputStageId(i)
+        signal => {
+          inputOutputInfo.getOrElseUpdate(
+            signal,
+            new SignalDescription
+          ).updOutputId(i)
+        }
       )
     }
 
-    for ((key, info) <- inputOutputKeys) {
+    for ((signal, info) <- inputOutputInfo) {
+      if (info.lastOutputId > info.lastInputId) info.lastInputId = info.lastOutputId
+      else if (info.lastOutputId < info.lastInputId) info.lastOutputId = info.lastInputId - 1
+    }
+
+    for ((signal, info) <- inputOutputInfo) {
       // connect inputs -> outputs
-      for (i <- info.insertStageId to info.lastOutputStageId; stage = stages(i)) {
-        stage.output(key)
-        val outputDefault = stage.outputsDefault.getOrElse(key, null)
-        if (outputDefault != null) outputDefault := stage.input(key)
+      for (i <- info.insertId to info.lastOutputId; stage = stages(i)) {
+        stage.output(signal)
+        val output = stage.outputs.getOrElse(signal, null)
+        output.setName(s"${stage.getName()}_${signal.getName()}_out")
+        if (output != null) {
+          val input = stage.input(signal)
+          input.setName(s"${stage.getName()}_${signal.getName()}_in")
+          output := input
+        }
       }
       // connect outputs -> inputs
-      for (i <- info.insertStageId to info.lastInputStageId; stage = stages(i)) {
-        stage.input(key)
-        val inputDefault = stage.inputsDefault.getOrElse(key, null)
-        if (inputDefault != null) {
-          if (i == info.insertStageId) inputDefault := stage.inserts(key)
-          else inputDefault := RegNextWhen(
-            preStage(stage).output(key),
-            // when current inst is flushed, valid will be set false, output -> input
-            // when current inst is stuck, it won't be changed, won't be changed
-            // when current inst isn't stuck:
-            // if previous inst is flushed, valid will be set false, output -> input
-            // if previous inst is stuck, valid will be set false, output -> input
-            // if previous inst isn't stuck, valid will be set to the previous value, output -> input (change and valid)
-            !stage.arbitration.isStuck
-          )
+      for (i <- info.insertId to info.lastInputId; stage = stages(i)) {
+        stage.input(signal)
+        val input = stage.inputs.getOrElse(signal, null)
+        input.setName(s"${stage.getName()}_${signal.getName()}_in")
+        if (input != null) {
+          if (i == info.insertId) {
+            val insert = stage.inserts(signal)
+            insert.setName(s"${stage.getName()}_${signal.getName()}")
+            input := insert
+          }
+          else {
+            val pOutput = preStage(stage).output(signal)
+            pOutput.setName(s"${preStage(stage).getName()}_${signal.getName()}_out")
+            input := RegNextWhen(
+              pOutput,
+              // when current inst is flushed, valid will be set false, output -> input
+              // when current inst is stuck, it won't be changed, won't be changed
+              // when current inst isn't stuck:
+              // if previous inst is flushed, valid will be set false, output -> input
+              // if previous inst is stuck, valid will be set false, output -> input
+              // if previous inst isn't stuck, valid will be set to the previous value, output -> input (change and valid)
+              !stage.pipelineSignal.isStalled
+            ).setName(s"${preStage(stage).getName()}_${stage.getName()}_${signal.getName()}_reg")
+          }
         }
       }
     }
@@ -178,7 +190,9 @@ trait Pipeline {
 
   def build() = {
     buildPlugins()
-    buildArbitration()
+    buildSignal()
     buildPipelineSignal()
   }
+
+  Component.current.addPrePopTask(() => build())
 }
