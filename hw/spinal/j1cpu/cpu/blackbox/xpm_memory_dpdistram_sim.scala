@@ -2,6 +2,7 @@ package j1cpu.cpu.blackbox
 
 import spinal.core._
 import spinal.lib._
+import j1cpu.cpu.J1cpuConfig
 
 class xpm_memory_dpdistram_sim(depth: Int, width: Int, use4Data: Int) extends Component {
   val io = new Bundle {
@@ -22,18 +23,14 @@ class xpm_memory_dpdistram_sim(depth: Int, width: Int, use4Data: Int) extends Co
 
   noIoPrefix()
 
-  val mem = Mem(UInt(width bits), depth)
+  val mem = Mem(UInt (width bits), depth)
 
   import io._
 
   new ClockingArea(
     new ClockDomain(
       clock = clka,
-      config = ClockDomainConfig(
-        resetActiveLevel = HIGH,
-        resetKind = SYNC,
-        clockEdge = RISING
-      )
+      config = (new J1cpuConfig).clockConfig
     )
   ) {
     mem.write(
@@ -55,11 +52,7 @@ class xpm_memory_dpdistram_sim(depth: Int, width: Int, use4Data: Int) extends Co
 //  def main(args: Array[String]): Unit = {
 //    val spinalConfig = SpinalConfig(
 //      targetDirectory = "hw/gen",
-//      defaultConfigForClockDomains = ClockDomainConfig(
-//        resetActiveLevel = HIGH,
-//        resetKind = SYNC,
-//        clockEdge = RISING
-//      )
+//      defaultConfigForClockDomains = (new J1cpuConfig).clockConfig
 //    )
 //
 //    spinalConfig.generateVerilog(new xpm_memory_dpdistram_sim(256, 21, 0))

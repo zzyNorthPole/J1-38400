@@ -18,10 +18,10 @@ class xpm_memory_spram(depth: Int, width: Int, use4Data: Int) extends BlackBox {
   val io = new Bundle {
     val clka = in Bool()
     val ena = in Bool()
-    val wea = in UInt((if (use4Data == 0) 1 else (width / 8)) bits)
-    val addra = in UInt(log2Up(depth) bits)
-    val dina = in UInt(width bits)
-    val douta = out UInt(width bits)
+    val wea = in UInt ((if (use4Data == 0) 1 else (width / 8)) bits)
+    val addra = in UInt (log2Up(depth) bits)
+    val dina = in UInt (width bits)
+    val douta = out UInt (width bits)
   }
 
   noIoPrefix()

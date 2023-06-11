@@ -1,5 +1,6 @@
 package j1cpu.cpu.blackbox
 
+import j1cpu.cpu.J1cpuConfig
 import spinal.core._
 
 class xpm_memory_sdpram_sim(depth: Int, width: Int, use4Data: Int) extends Component {
@@ -31,11 +32,7 @@ class xpm_memory_sdpram_sim(depth: Int, width: Int, use4Data: Int) extends Compo
   new ClockingArea(
     new ClockDomain(
       clock = clka,
-      config = ClockDomainConfig(
-        resetActiveLevel = HIGH,
-        resetKind = SYNC,
-        clockEdge = RISING
-      )
+      config = (new J1cpuConfig()).clockConfig
     )
   ) {
     val enaReg = Reg(Bool())
@@ -94,17 +91,13 @@ class xpm_memory_sdpram_sim(depth: Int, width: Int, use4Data: Int) extends Compo
   }
 }
 
-//object memGen {
-//  def main(args: Array[String]): Unit = {
-//    val spinalConfig = SpinalConfig(
-//      targetDirectory = "hw/gen",
-//      defaultConfigForClockDomains = ClockDomainConfig(
-//        resetActiveLevel = HIGH,
-//        resetKind = SYNC,
-//        clockEdge = RISING
-//      )
-//    )
-//
-//    spinalConfig.generateVerilog(new xpm_memory_sdpram_sim(256, 32, 1))
-//  }
-//}
+object memGen {
+  def main(args: Array[String]): Unit = {
+    val spinalConfig = SpinalConfig(
+      targetDirectory = "hw/gen",
+      defaultConfigForClockDomains = new J1cpuConfig().clockConfig
+    )
+
+    spinalConfig.generateVerilog(new xpm_memory_sdpram_sim(256, 32, 1))
+  }
+}

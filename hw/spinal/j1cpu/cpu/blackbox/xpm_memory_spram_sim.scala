@@ -1,5 +1,6 @@
 package j1cpu.cpu.blackbox
 
+import j1cpu.cpu.J1cpuConfig
 import spinal.core._
 import spinal.lib._
 
@@ -8,10 +9,10 @@ class xpm_memory_spram_sim(depth: Int, width: Int, use4Data: Int) extends Compon
   val io = new Bundle {
     val clka = in Bool()
     val ena = in Bool()
-    val wea = in UInt((if (use4Data == 0) 1 else (width / 8)) bits)
-    val addra = in UInt(log2Up(depth) bits)
-    val dina = in UInt(width bits)
-    val douta = out UInt(width bits)
+    val wea = in UInt ((if (use4Data == 0) 1 else (width / 8)) bits)
+    val addra = in UInt (log2Up(depth) bits)
+    val dina = in UInt (width bits)
+    val douta = out UInt (width bits)
   }
 
   noIoPrefix()
@@ -20,17 +21,13 @@ class xpm_memory_spram_sim(depth: Int, width: Int, use4Data: Int) extends Compon
   // read first: dout = previous mem[addr]
   // write first: if read dout = previous mem[addr] else dout = previous din
   // no change: if read dout = previous mem[addr] else dout not change
-  val mem = Mem(UInt(width bits), depth)
+  val mem = Mem(UInt (width bits), depth)
   import io._
 
   new ClockingArea(
     new ClockDomain(
       clock = clka,
-      config = ClockDomainConfig(
-        resetActiveLevel = HIGH,
-        resetKind = SYNC,
-        clockEdge = RISING
-      )
+      config = new J1cpuConfig().clockConfig
     )
   ) {
     io.douta := mem.readWriteSyncMixedWidth(
@@ -47,11 +44,7 @@ class xpm_memory_spram_sim(depth: Int, width: Int, use4Data: Int) extends Compon
 //  def main(args: Array[String]): Unit = {
 //    val spinalConfig = SpinalConfig(
 //      targetDirectory = "hw/gen",
-//      defaultConfigForClockDomains = ClockDomainConfig(
-//        resetActiveLevel = HIGH,
-//        resetKind = SYNC,
-//        clockEdge = RISING
-//      )
+//      defaultConfigForClockDomains = new J1cpuConfig().clockConfig
 //    )
 //
 //    spinalConfig.generateVerilog(new xpm_memory_spram_sim(256, 21, 0))
