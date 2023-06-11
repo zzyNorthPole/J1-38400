@@ -1,5 +1,6 @@
 package j1cpu.cpu.utils
 
+import j1cpu.cpu.J1cpuConfig
 import j1cpu.cpu.blackbox.{xpm_memory_dpdistram, xpm_memory_dpdistram_sim}
 import spinal.core._
 import spinal.lib._
@@ -10,10 +11,10 @@ class Dram(depth: Int, width: Int, use4Data: Int, sim: Int) extends Component {
 
     // a for write
     val ena = in Bool()
-    val wea = in UInt((if (use4Data == 0) 1 else (width / 8)) bits)
-    val addra = in UInt(log2Up(depth) bits)
-    val dina = in UInt(width bits)
-    val douta = out UInt(width bits)
+    val wea = in UInt ((if (use4Data == 0) 1 else (width / 8)) bits)
+    val addra = in UInt (log2Up(depth) bits)
+    val dina = in UInt (width bits)
+    val douta = out UInt (width bits)
 
     // b for read
     val enb = in Bool()
@@ -59,17 +60,13 @@ class Dram(depth: Int, width: Int, use4Data: Int, sim: Int) extends Component {
   }
 }
 
-//object dramGen {
-//  def main(args: Array[String]): Unit = {
-//    val spinalConfig = SpinalConfig(
-//      targetDirectory = "hw/gen",
-//      defaultConfigForClockDomains = ClockDomainConfig(
-//        resetActiveLevel = HIGH,
-//        resetKind = SYNC,
-//        clockEdge = RISING
-//      )
-//    )
-//
-//    spinalConfig.generateVerilog(new Dram(256, 32, 1, 1))
-//  }
-//}
+object dramGen {
+  def main(args: Array[String]): Unit = {
+    val spinalConfig = SpinalConfig(
+      targetDirectory = "hw/gen",
+      defaultConfigForClockDomains = new J1cpuConfig().clockConfig
+    )
+
+    spinalConfig.generateVerilog(new Dram(256, 32, 1, 1))
+  }
+}

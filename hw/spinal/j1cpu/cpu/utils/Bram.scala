@@ -1,5 +1,6 @@
 package j1cpu.cpu.utils
 
+import j1cpu.cpu.J1cpuConfig
 import spinal.core._
 import spinal.lib._
 import j1cpu.cpu.blackbox.{xpm_memory_sdpram, xpm_memory_sdpram_sim}
@@ -12,14 +13,14 @@ class Bram(depth: Int, width: Int, use4Data: Int, sim: Int) extends Component {
 
     // a for write
     val ena = in Bool()
-    val wea = in UInt((if (use4Data == 0) 1 else (width / 8)) bits)
-    val addra = in UInt(log2Up(depth) bits)
-    val dina = in UInt(width bits)
+    val wea = in UInt ((if (use4Data == 0) 1 else (width / 8)) bits)
+    val addra = in UInt (log2Up(depth) bits)
+    val dina = in UInt (width bits)
 
     // b for read
     val enb = in Bool()
-    val addrb = in UInt(log2Up(depth) bits)
-    val doutb = out UInt(width bits)
+    val addrb = in UInt (log2Up(depth) bits)
+    val doutb = out UInt (width bits)
   }
 
   noIoPrefix()
@@ -58,17 +59,13 @@ class Bram(depth: Int, width: Int, use4Data: Int, sim: Int) extends Component {
   }
 }
 
-//object bramGen {
-//  def main(args: Array[String]): Unit = {
-//    val spinalConfig = SpinalConfig(
-//      targetDirectory = "hw/gen",
-//      defaultConfigForClockDomains = ClockDomainConfig(
-//        resetActiveLevel = HIGH,
-//        resetKind = SYNC,
-//        clockEdge = RISING
-//      )
-//    )
-//
-//    spinalConfig.generateVerilog(new Bram(256, 32, 1, 0))
-//  }
-//}
+object bramGen {
+  def main(args: Array[String]): Unit = {
+    val spinalConfig = SpinalConfig(
+      targetDirectory = "hw/gen",
+      defaultConfigForClockDomains = new J1cpuConfig().clockConfig
+    )
+
+    spinalConfig.generateVerilog(new Bram(256, 32, 1, 0))
+  }
+}

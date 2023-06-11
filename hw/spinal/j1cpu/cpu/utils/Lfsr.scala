@@ -1,5 +1,6 @@
 package j1cpu.cpu.utils
 
+import j1cpu.cpu.J1cpuConfig
 import spinal.core._
 import spinal.lib._
 
@@ -8,8 +9,8 @@ class Lfsr(width: Int) extends Component {
     val clk = in Bool()
     val reset = in Bool()
     val en = in Bool()
-    val seed = in UInt(width bits)
-    val dout = out UInt(width bits)
+    val seed = in UInt (width bits)
+    val dout = out UInt (width bits)
   }
 
   noIoPrefix()
@@ -33,11 +34,7 @@ class Lfsr(width: Int) extends Component {
     new ClockDomain(
       clock = clk,
       reset = reset,
-      config = ClockDomainConfig(
-        resetActiveLevel = HIGH,
-        resetKind = SYNC,
-        clockEdge = RISING
-      )
+      config = new J1cpuConfig().clockConfig
     )
   ) {
     val lfsr = RegInit(seed)
