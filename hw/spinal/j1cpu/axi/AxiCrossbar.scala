@@ -99,11 +99,7 @@ object AxiCrossbarGen {
   def main(args: Array[String]): Unit = {
     val spinalConfig = SpinalConfig(
       targetDirectory = "hw/gen",
-      defaultConfigForClockDomains = ClockDomainConfig(
-        resetActiveLevel = HIGH,
-        resetKind = SYNC,
-        clockEdge = RISING
-      )
+      defaultConfigForClockDomains = (new J1cpuConfig).clockConfig
     )
 
     spinalConfig.generateVerilog(new AxiCrossbar((new J1cpuConfig()).axiConfig))
