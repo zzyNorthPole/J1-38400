@@ -2,9 +2,9 @@ package j1cpu.cpu
 
 import j1cpu.cpu.vexriscv.Pipeline
 import j1cpu.cpu.plugins._
-import j1cpu.cpu.plugins.id.Decoder
-import j1cpu.cpu.plugins.ex.ExDescription
-import j1cpu.cpu.plugins.mem.Mem
+import j1cpu.cpu.plugins.ID.Decoder
+import j1cpu.cpu.plugins.EX.ExDescription
+import j1cpu.cpu.plugins.MEM.Mem
 import spinal.core._
 
 class J1cpu(val signal: J1cpuSignal) extends Component with Pipeline {
