@@ -1,4 +1,4 @@
-package j1cpu.cpu.plugins.mem
+package j1cpu.cpu.plugins.MEM
 
 import spinal.core._
 import spinal.lib._
@@ -15,13 +15,14 @@ class DCache(cacheConfig: CacheConfig, axiConfig: Axi4Config, sim: Int) extends 
 
     // cpu
     val en = in Bool() // mem1
-    val we = in UInt(4 bits) // mem1
-    val addr = in UInt(32 bits) // mem1
-    val din = in UInt(32 bits) // mem1
-    val dout = out UInt(32 bits) // mem2
+    val we = in UInt (4 bits) // mem1
+    val addr = in UInt (32 bits) // mem1
+    val din = in UInt (32 bits) // mem1
+    val dout = out UInt (32 bits) // mem2
 
     // tlb
-    val correctTag = in UInt(cacheConfig.tagWidth bits) // mem2
+    val cached = in Bool() // mem1, used for uncached
+    val correctTag = in UInt (cacheConfig.tagWidth bits) // mem1
 
     // communicate signal for pipeline pass
     // ready recommendation:
@@ -32,6 +33,7 @@ class DCache(cacheConfig: CacheConfig, axiConfig: Axi4Config, sim: Int) extends 
 
     // axi
     val dbus = master(Axi4(axiConfig)).setIdle() // mem2
+    val udbus = master(Axi4(axiConfig)).setIdle() // mem2
   }
   noIoPrefix()
 
@@ -43,15 +45,19 @@ class DCache(cacheConfig: CacheConfig, axiConfig: Axi4Config, sim: Int) extends 
     }
   }
 
+  io.udbus.flattenForeach {
+    signal => {
+      val tmpName = signal.getName()
+      val tmpList = tmpName.split("_")
+      signal.setName(tmpList(0) + "_" + tmpList(1) + "_" + tmpList(tmpList.size - 1))
+    }
+  }
+
   new ClockingArea(
     new ClockDomain(
       clock = io.clk,
       reset = io.reset,
-      config = ClockDomainConfig(
-        resetActiveLevel = HIGH,
-        resetKind = SYNC,
-        clockEdge = RISING
-      )
+      config = new J1cpuConfig().clockConfig
     )
   ) {
     val tagRams = Seq.fill(cacheConfig.ways) {
@@ -78,25 +84,28 @@ class DCache(cacheConfig: CacheConfig, axiConfig: Axi4Config, sim: Int) extends 
 
     val mem1 = new Area {
       val en = Bool()
-      val we = UInt(4 bits)
-      val addr = UInt(32 bits)
-      val din = UInt(32 bits)
+      val we = UInt (4 bits)
+      val addr = UInt (32 bits)
+      val din = UInt (32 bits)
 
-      val correctTag = UInt(cacheConfig.tagWidth bits)
-      val index = UInt(cacheConfig.indexWidth bits)
-      val offset = UInt(cacheConfig.offsetWidth bits)
+      val cached = Bool()
+      val correctTag = UInt (cacheConfig.tagWidth bits)
+      val index = UInt (cacheConfig.indexWidth bits)
+      val offset = UInt (cacheConfig.offsetWidth bits)
 
       en := io.en
       we := io.we
       addr := io.addr
       din := io.din
 
+      cached := io.cached
       correctTag := io.correctTag
       index := addr((cacheConfig.indexWidth + cacheConfig.offsetWidth - 1) downto cacheConfig.offsetWidth)
       offset := addr((cacheConfig.offsetWidth - 1) downto 0)
 
+      // query tag
       // mem1 read, mem1 receive result
-      val tags = Vec(UInt(cacheConfig.tagWidth bits), cacheConfig.ways)
+      val tags = Vec(UInt (cacheConfig.tagWidth bits), cacheConfig.ways)
       for (i <- 0 until cacheConfig.ways) {
         val curRam = tagRams(i)
         curRam.io.clk := io.clk
@@ -111,6 +120,7 @@ class DCache(cacheConfig: CacheConfig, axiConfig: Axi4Config, sim: Int) extends 
         tags(i) := curRam.io.doutb
       }
 
+      // query valid
       val valids = Vec(Bool(), cacheConfig.ways)
       for (i <- 0 until cacheConfig.ways) {
         val curRam = validRams(i)
@@ -139,7 +149,7 @@ class DCache(cacheConfig: CacheConfig, axiConfig: Axi4Config, sim: Int) extends 
       )
 
       // actually mem2.dataLines, put it here in order to avoid recursive definition
-      val dataLines = Vec(Vec(UInt(32 bits), cacheConfig.ways), cacheConfig.words)
+      val dataLines = Vec(Vec(UInt (32 bits), cacheConfig.ways), cacheConfig.words)
       dataLines.setName("mem2").reflectNames()
       for (i <- 0 until cacheConfig.words) {
         for (j <- 0 until cacheConfig.ways) {
@@ -180,7 +190,7 @@ class DCache(cacheConfig: CacheConfig, axiConfig: Axi4Config, sim: Int) extends 
       lfsr.io.en := io.en & io.ready
       lfsr.io.seed := U((lfsrWidth - 1 downto 0) -> true)
       // actually mem2.lfsrDout, put it here in order to avoid recursive definition
-      val lfsrDout = UInt(lfsrWidth bits)
+      val lfsrDout = UInt (lfsrWidth bits)
       lfsrDout := lfsr.io.dout
     }
     mem1.setName("mem1").reflectNames()
@@ -190,6 +200,8 @@ class DCache(cacheConfig: CacheConfig, axiConfig: Axi4Config, sim: Int) extends 
       val we = RegInit(U(0, 4 bits))
       val addr = RegInit(U(0, 32 bits))
       val din = RegInit(U(0, 32 bits))
+
+      val cached = RegInit(False)
 
       val tags = Vec(RegInit(U(0, cacheConfig.tagWidth bits)), cacheConfig.ways)
       val correctTag = RegInit(U(0, cacheConfig.tagWidth bits))
@@ -207,6 +219,8 @@ class DCache(cacheConfig: CacheConfig, axiConfig: Axi4Config, sim: Int) extends 
         addr := mem1.addr
         din := mem1.din
 
+        cached := mem1.cached
+
         tags := mem1.tags
         correctTag := mem1.correctTag
 
@@ -221,22 +235,14 @@ class DCache(cacheConfig: CacheConfig, axiConfig: Axi4Config, sim: Int) extends 
       // hit
       val hit = RegInit(False)
       val hitWay = RegInit(U(0, log2Up(cacheConfig.ways) bits))
-
       when(io.ready) {
         hit := mem1.hit
         hitWay := mem1.hitWay
       }
 
-      val data = Vec(UInt(32 bits), cacheConfig.ways)
+      val data = Vec(UInt (32 bits), cacheConfig.ways)
       for (i <- 0 until cacheConfig.ways) {
-        data(i) := U(0, 32 bits)
-      }
-      for (i <- 0 until cacheConfig.words) {
-        when(offset((cacheConfig.offsetWidth - 1) downto 2) === U(i, (cacheConfig.offsetWidth - 2) bits)) {
-          for (j <- 0 until cacheConfig.ways) {
-            data(j) := mem1.dataLines(i)(j)
-          }
-        }
+        data(i) := mem1.dataLines(offset((cacheConfig.offsetWidth - 1) downto 2))(i)
       }
 
       // invalid way select
@@ -260,7 +266,7 @@ class DCache(cacheConfig: CacheConfig, axiConfig: Axi4Config, sim: Int) extends 
       val replaceWayReg = RegInit(U(0, log2Up(cacheConfig.ways) bits))
       val replaceWayTag = tags(replaceWay)
       val replaceWayTagReg = RegInit(U(0, cacheConfig.tagWidth bits))
-      val replaceWayData = Vec(UInt(32 bits), cacheConfig.words)
+      val replaceWayData = Vec(UInt (32 bits), cacheConfig.words)
       val replaceWayDataReg = Vec(RegInit(U(0, 32 bits)), cacheConfig.words)
       for (i <- 0 until cacheConfig.words) {
         replaceWayData(i) := mem1.dataLines(i)(replaceWay)
@@ -277,11 +283,11 @@ class DCache(cacheConfig: CacheConfig, axiConfig: Axi4Config, sim: Int) extends 
       val count = RegInit(U(0, log2Up(cacheConfig.words) bits))
       io.ready := False
       io.dout := U(0, 32 bits)
-      val dataCacheMainFSM = new StateMachine {
+      val dataCachedFSM = new StateMachine {
         import io.dbus._
 
-        val idle = new State()
-        setEntry(idle)
+        setEntry(stateBoot)
+        disableAutoStart()
 
         // writeBack
         val writeBackAw = new State()
@@ -296,30 +302,32 @@ class DCache(cacheConfig: CacheConfig, axiConfig: Axi4Config, sim: Int) extends 
 
         val update = new State()
 
-        idle.whenIsActive {
-          // combination
-          when(reLife) {
-            io.ready := True
-          }.otherwise {
-            io.ready := !en || (en && hit)
-          }
-          io.dout := data(hitWay)
-
-          // sequential
-          when(!io.ready) {
-            reLife := True
-            when(!dirtys(replaceWay)) {
-              goto(readNewAr)
+        stateBoot.whenIsActive {
+          when(cached) {
+            // combination
+            when(reLife) {
+              io.ready := True
             }.otherwise {
-              replaceWayReg := replaceWay
-              replaceWayTagReg := replaceWayTag
-              for (i <- 0 until cacheConfig.words) {
-                replaceWayDataReg(i) := replaceWayData(i)
-              }
-              goto(writeBackAw)
+              io.ready := !en || (en && hit)
             }
-          }.otherwise {
-            reLife := False
+
+            // sequential
+            when(!io.ready) {
+              reLife := True
+              replaceWayReg := replaceWay
+              when(!dirtys(replaceWay)) {
+                goto(readNewAr)
+              }.otherwise {
+                replaceWayTagReg := replaceWayTag
+                for (i <- 0 until cacheConfig.words) {
+                  replaceWayDataReg(i) := replaceWayData(i)
+                }
+                goto(writeBackAw)
+              }
+            }.otherwise {
+              reLife := False
+              io.dout := data(hitWay)
+            }
           }
         }
 
@@ -367,10 +375,10 @@ class DCache(cacheConfig: CacheConfig, axiConfig: Axi4Config, sim: Int) extends 
         }
 
         readNewAr.whenIsActive {
-          io.ready := True
+          io.ready := False
 
           ar.valid := True
-          ar.addr
+          ar.addr := correctTag @@ index @@ U(0, cacheConfig.offsetWidth bits) // TODO maybe physical address error
           ar.id := U(1, 5 bits)
           ar.len := U(cacheConfig.words - 1, 8 bits)
           ar.size := U(2, 3 bits) // 4 bytes
@@ -380,6 +388,7 @@ class DCache(cacheConfig: CacheConfig, axiConfig: Axi4Config, sim: Int) extends 
           ar.prot := B(0, 3 bits)
           when(ar.ready) {
             count := 0
+            replaceWayTagReg := correctTag
             goto(readNewR)
           }
         }
@@ -389,7 +398,7 @@ class DCache(cacheConfig: CacheConfig, axiConfig: Axi4Config, sim: Int) extends 
 
           r.ready := True
           when(r.valid) {
-            replaceWayDataReg(count).asBits := r.data
+            replaceWayDataReg(count) := r.data.asUInt
             count := count + 1
             when(r.last && r.fire) {
               goto(floodFill)
@@ -449,10 +458,126 @@ class DCache(cacheConfig: CacheConfig, axiConfig: Axi4Config, sim: Int) extends 
           }
           hit := True
 
-          goto(idle)
+          goto(stateBoot)
         }
       }
-      dataCacheMainFSM.reflectNames()
+      dataCachedFSM.reflectNames()
+
+      val uncachedData = RegInit(U(0, 32 bits))
+      val dataUncachedFSM = new StateMachine {
+        import io.udbus._
+
+        setEntry(stateBoot)
+        disableAutoStart()
+
+        val writeAw = new State()
+        val writeW = new State()
+        val writeB = new State()
+
+        val readAr = new State()
+        val readR = new State()
+
+        stateBoot.whenIsActive {
+          when(!cached) {
+            // combination
+            when(reLife) {
+              io.ready := True
+            }.otherwise {
+              io.ready := !en
+            }
+
+            // sequential
+            when(!io.ready) {
+              reLife := True
+              when(en) {
+                when(we.orR) {
+                  goto(writeAw)
+                }.otherwise {
+                  goto(readAr)
+                }
+              }
+            }.otherwise {
+              reLife := False
+              io.dout := uncachedData
+            }
+          }
+        }
+
+        writeAw.whenIsActive {
+          io.ready := False
+
+          aw.valid := True
+          aw.addr := correctTag @@ index @@ offset // TODO maybe physical address error
+          aw.id := U(1, 5 bits);
+          aw.len := U(0, 8 bits)
+          aw.size := U(2, 3 bits) // 4 bytes each time
+          aw.burst := B(0, 2 bits) // FIXED
+          aw.lock := B(0, 1 bits)
+          aw.cache := B(0, 4 bits)
+          aw.prot := B(0, 3 bits)
+          when(aw.ready) {
+            count := U(0, log2Up(cacheConfig.words) bits)
+            goto(writeW)
+          }
+        }
+
+        writeW.whenIsActive {
+          io.ready := False
+
+          w.valid := True
+          w.data := din.asBits
+          w.strb := B((3 downto 0) -> true)
+          w.last := True
+          when(w.ready) {
+            b.ready := True
+            goto(writeB)
+          }
+        }
+
+        writeB.whenIsActive {
+          io.ready := False
+
+          b.ready := True
+          when(b.valid) {
+            goto(stateBoot)
+          }
+        }
+
+        readAr.whenIsActive {
+          io.ready := True
+
+          ar.valid := True
+          ar.addr := correctTag @@ index @@ U(0, cacheConfig.offsetWidth bits) // TODO maybe physical address error
+          ar.id := U(1, 5 bits)
+          ar.len := U(0, 8 bits)
+          ar.size := U(2, 3 bits) // 4 bytes
+          ar.burst := B(0, 2 bits) // FIXED
+          ar.lock := B(0, 1 bits)
+          ar.cache := B(0, 4 bits)
+          ar.prot := B(0, 3 bits)
+          when(ar.ready) {
+            count := 0
+            goto(readR)
+          }
+        }
+
+        readR.whenIsActive {
+          io.ready := False
+
+          r.ready := True
+          when(r.valid) {
+            uncachedData := r.data.asUInt
+            when(r.fire) {
+              goto(stateBoot)
+            }
+          }
+        }
+      }
+      dataUncachedFSM.reflectNames()
+
+      // TODO: load/store instrument operator and dirty fix
+
+      // TODO: cache operation need to be added after decoder and cp0 generation
     }
     mem2.setName("mem2").reflectNames()
   }
@@ -462,11 +587,7 @@ object DCacheGen {
   def main(args: Array[String]): Unit = {
     val spinalConfig = SpinalConfig(
       targetDirectory = "hw/gen",
-      defaultConfigForClockDomains = ClockDomainConfig(
-        resetActiveLevel = HIGH,
-        resetKind = SYNC,
-        clockEdge = RISING
-      )
+      defaultConfigForClockDomains = new J1cpuConfig().clockConfig
     )
 
     spinalConfig.generateVerilog(new DCache(new CacheConfig(ways = 2, lines = 256, blockSize = 32), new J1cpuConfig().axiConfig, 0))
