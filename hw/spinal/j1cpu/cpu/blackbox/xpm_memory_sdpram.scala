@@ -21,7 +21,7 @@ class xpm_memory_sdpram(depth: Int, width: Int, use4Data: Int) extends BlackBox 
 
     // a for write
     val ena = in Bool()
-    val wea = in UInt ((if (use4Data == 0) 1 else (width / 8)) bits)
+    val wea = in Bits ((if (use4Data == 0) 1 else width / 8) bits)
     val addra = in UInt (log2Up(depth) bits)
     val dina = in UInt (width bits)
 
@@ -33,5 +33,5 @@ class xpm_memory_sdpram(depth: Int, width: Int, use4Data: Int) extends BlackBox 
 
   noIoPrefix()
 
-  // mapClockDomain(clock = io.clka)
+  mapClockDomain(clock = io.clka)
 }

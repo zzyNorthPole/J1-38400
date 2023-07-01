@@ -6,11 +6,9 @@ import j1cpu.cpu.J1cpuConfig
 
 class xpm_memory_dpdistram_sim(depth: Int, width: Int, use4Data: Int) extends Component {
   val io = new Bundle {
-    val clka = in Bool()
-
     // a for write and read
     val ena = in Bool()
-    val wea = in UInt ((if (use4Data == 0) 1 else (width / 8)) bits)
+    val wea = in Bits ((if (use4Data == 0) 1 else (width / 8)) bits)
     val addra = in UInt (log2Up(depth) bits)
     val dina = in UInt (width bits)
     val douta = out UInt (width bits)
@@ -27,34 +25,27 @@ class xpm_memory_dpdistram_sim(depth: Int, width: Int, use4Data: Int) extends Co
 
   import io._
 
-  new ClockingArea(
-    new ClockDomain(
-      clock = clka,
-      config = (new J1cpuConfig).clockConfig
-    )
-  ) {
-    mem.write(
-      address = addra,
-      data = dina,
-      enable = ena,
-      mask = wea.asBits
-    )
-    douta := mem.readAsync(
-      address = addra
-    )
-    doutb := mem.readAsync(
-      address = addrb
-    )
-  }
+  mem.write(
+    address = addra,
+    data = dina,
+    enable = ena,
+    mask = wea
+  )
+  douta := mem.readAsync(
+    address = addra
+  )
+  doutb := mem.readAsync(
+    address = addrb
+  )
 }
 
-//object memGen {
-//  def main(args: Array[String]): Unit = {
-//    val spinalConfig = SpinalConfig(
-//      targetDirectory = "hw/gen",
-//      defaultConfigForClockDomains = (new J1cpuConfig).clockConfig
-//    )
-//
-//    spinalConfig.generateVerilog(new xpm_memory_dpdistram_sim(256, 21, 0))
-//  }
-//}
+object xpm_memory_dpdistramGen {
+  def main(args: Array[String]): Unit = {
+    val spinalConfig = SpinalConfig(
+      targetDirectory = "hw/gen",
+      defaultConfigForClockDomains = J1cpuConfig().clockConfig
+    )
+
+    spinalConfig.generateVerilog(new xpm_memory_dpdistram_sim(256, 21, 0))
+  }
+}
