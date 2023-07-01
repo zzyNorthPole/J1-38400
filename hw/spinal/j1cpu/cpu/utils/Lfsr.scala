@@ -6,7 +6,6 @@ import spinal.lib._
 
 class Lfsr(width: Int) extends Component {
   val io = new Bundle {
-    val clk = in Bool()
     val reset = in Bool()
     val en = in Bool()
     val seed = in UInt (width bits)
@@ -30,17 +29,9 @@ class Lfsr(width: Int) extends Component {
 
   import io._
 
-  new ClockingArea(
-    new ClockDomain(
-      clock = clk,
-      reset = reset,
-      config = new J1cpuConfig().clockConfig
-    )
-  ) {
-    val lfsr = RegInit(seed)
-    when(en) {
-      lfsr := lfsr((width - 2) downto 0) @@ (lfsr & taps(width - 1 downto 0)).xorR
-    }
-    dout := lfsr
+  val lfsr = RegInit(seed)
+  when(en) {
+    lfsr := lfsr((width - 2) downto 0) @@ (lfsr & taps(width - 1 downto 0)).xorR
   }
+  dout := lfsr
 }
