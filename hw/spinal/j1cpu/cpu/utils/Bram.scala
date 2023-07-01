@@ -9,11 +9,9 @@ import j1cpu.cpu.blackbox.{xpm_memory_sdpram, xpm_memory_sdpram_sim}
 // use4Data = 1 data ram
 class Bram(depth: Int, width: Int, use4Data: Int, sim: Int) extends Component {
   val io = new Bundle {
-    val clk = in Bool()
-
     // a for write
     val ena = in Bool()
-    val wea = in UInt ((if (use4Data == 0) 1 else (width / 8)) bits)
+    val wea = in Bits ((if (use4Data == 0) 1 else (width / 8)) bits)
     val addra = in UInt (log2Up(depth) bits)
     val dina = in UInt (width bits)
 
@@ -30,8 +28,6 @@ class Bram(depth: Int, width: Int, use4Data: Int, sim: Int) extends Component {
 
     import io._
 
-    bram.io.clka := clk
-
     bram.io.ena := ena
     bram.io.wea := wea
     bram.io.addra := addra
@@ -45,8 +41,6 @@ class Bram(depth: Int, width: Int, use4Data: Int, sim: Int) extends Component {
     val bram = new xpm_memory_sdpram_sim(depth, width, use4Data)
 
     import io._
-
-    bram.io.clka := clk
 
     bram.io.ena := ena
     bram.io.wea := wea
@@ -63,7 +57,7 @@ object bramGen {
   def main(args: Array[String]): Unit = {
     val spinalConfig = SpinalConfig(
       targetDirectory = "hw/gen",
-      defaultConfigForClockDomains = new J1cpuConfig().clockConfig
+      defaultConfigForClockDomains = J1cpuConfig().clockConfig
     )
 
     spinalConfig.generateVerilog(new Bram(256, 32, 1, 0))

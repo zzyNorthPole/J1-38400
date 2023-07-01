@@ -7,11 +7,9 @@ import spinal.lib._
 
 class Dram(depth: Int, width: Int, use4Data: Int, sim: Int) extends Component {
   val io = new Bundle {
-    val clk = in Bool()
-
     // a for write
     val ena = in Bool()
-    val wea = in UInt ((if (use4Data == 0) 1 else (width / 8)) bits)
+    val wea = in Bits ((if (use4Data == 0) 1 else (width / 8)) bits)
     val addra = in UInt (log2Up(depth) bits)
     val dina = in UInt (width bits)
     val douta = out UInt (width bits)
@@ -29,8 +27,6 @@ class Dram(depth: Int, width: Int, use4Data: Int, sim: Int) extends Component {
 
     import io._
 
-    dram.io.clka := clk
-
     dram.io.ena := ena
     dram.io.wea := wea
     dram.io.addra := addra
@@ -45,8 +41,6 @@ class Dram(depth: Int, width: Int, use4Data: Int, sim: Int) extends Component {
     val dram = new xpm_memory_dpdistram_sim(depth, width, use4Data)
 
     import io._
-
-    dram.io.clka := clk
 
     dram.io.ena := ena
     dram.io.wea := wea
@@ -64,7 +58,7 @@ object dramGen {
   def main(args: Array[String]): Unit = {
     val spinalConfig = SpinalConfig(
       targetDirectory = "hw/gen",
-      defaultConfigForClockDomains = new J1cpuConfig().clockConfig
+      defaultConfigForClockDomains = J1cpuConfig().clockConfig
     )
 
     spinalConfig.generateVerilog(new Dram(256, 32, 1, 1))
