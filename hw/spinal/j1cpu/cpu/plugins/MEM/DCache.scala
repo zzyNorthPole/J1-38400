@@ -374,6 +374,12 @@ class DCache(cacheConfig: CacheConfig, axiConfig: Axi4Config, sim: Int) extends 
       val readNewAr = new State()
       val readNewR = new State()
 
+      stateBoot.whenIsActive {
+        when(readNewValid) {
+          goto(readNewAr)
+        }
+      }
+
       readNewAr.whenIsActive {
         ar.valid := True
         when(ar.ready) {
@@ -568,7 +574,7 @@ class DCache(cacheConfig: CacheConfig, axiConfig: Axi4Config, sim: Int) extends 
         val curWay = U(i, log2Up(cacheConfig.ways) bits)
         val cachedFloodFill = floodFillValid && (replaceWayReg === curWay)
         val cacheOpStateBootInvalidateValid = (cacheOp === CacheOp.indexInvalidateWriteBack) ? io.valid | (io.valid && hit)
-        val cacheOpStateBootInvalidate = cached && cacheOpEn && cacheOpStateBootInvalidateValid && (writeWay === curWay)
+        val cacheOpStateBootInvalidate = cached && cacheOpEn && cacheOpStateBootInvalidateValid && (invalidateWay === curWay)
         curRam.io.ena := cachedFloodFill || cacheOpStateBootInvalidate
         curRam.io.wea := B(1, 1 bits)
         curRam.io.addra := index
