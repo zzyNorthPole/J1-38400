@@ -38,7 +38,7 @@ class IfDescription(j1cpuConfig: J1cpuConfig) extends Plugin[J1cpu] {
       when(!pipelineSignal.isStalled) {
         instRegValid := False
       }
-      insert(INST) := instRegValid ? instReg | iCache.io.dout
+      insert(INST) := (instRegValid ? instReg | iCache.io.dout).asBits
     }
   }
 }
