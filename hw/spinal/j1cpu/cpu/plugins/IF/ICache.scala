@@ -375,6 +375,6 @@ object ICacheGen {
       defaultConfigForClockDomains = new J1cpuConfig().clockConfig
     )
 
-    spinalConfig.generateVerilog(new ICache(new CacheConfig(ways = 2, lines = 256, blockSize = 32), new J1cpuConfig().axiConfig, 0))
+    spinalConfig.generateVerilog(new ICache(CacheConfig(ways = 2, lines = 256, blockSize = 32), J1cpuConfig().axiConfig, 0))
   }
 }
