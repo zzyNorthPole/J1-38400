@@ -12,6 +12,8 @@ import spinal.lib.fsm.{State, StateMachine}
 class ICache(cacheConfig: CacheConfig, axiConfig: Axi4Config, sim: Int) extends Component {
   val io = new Bundle {
     // cpu
+    val flush = in Bool() // if1
+
     val en = in Bool() // if1
     val we = in Bits (4 bits) // if1
     val addr = in UInt (32 bits) // if1
@@ -59,6 +61,8 @@ class ICache(cacheConfig: CacheConfig, axiConfig: Axi4Config, sim: Int) extends 
   }
 
   val if1 = new Area {
+    val flush = Bool()
+
     val en = Bool()
     val we = Bits (4 bits)
     val addr = UInt (32 bits)
@@ -69,6 +73,8 @@ class ICache(cacheConfig: CacheConfig, axiConfig: Axi4Config, sim: Int) extends 
     val correctTag = UInt (cacheConfig.tagWidth bits)
     val index = UInt (cacheConfig.indexWidth bits)
     val offset = UInt (cacheConfig.offsetWidth bits)
+
+    flush := io.flush
 
     en := io.en
     we := io.we
@@ -166,7 +172,7 @@ class ICache(cacheConfig: CacheConfig, axiConfig: Axi4Config, sim: Int) extends 
     val offset = RegInit(U(0, cacheConfig.offsetWidth bits))
 
     when(io.ready) {
-      en := if1.en
+      en := if1.en && !if1.flush
       we := if1.we
       addr := if1.addr
 
