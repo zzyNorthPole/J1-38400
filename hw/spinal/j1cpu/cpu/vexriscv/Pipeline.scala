@@ -2,7 +2,9 @@ package j1cpu.cpu.vexriscv
 
 import spinal.core._
 import spinal.lib._
+
 import scala.collection.mutable
+import scala.reflect.ClassTag
 
 trait Pipeline {
   type T <: Pipeline
@@ -10,8 +12,9 @@ trait Pipeline {
   // plugin related
   val plugins = mutable.ArrayBuffer[Plugin[T]]()
 
-  def service[T](clazz: Class[T]): T = {
-    val filtered = plugins.filter(tmp => (tmp.getClass == clazz))
+  def service[T](implicit tag: ClassTag[T]) = {
+    val clazz = tag.runtimeClass
+    val filtered = plugins.filter(tmp => tmp.getClass == clazz)
     filtered.head.asInstanceOf[T]
   }
 
@@ -75,8 +78,13 @@ trait Pipeline {
         }
       }
       else {
-        // TODO: ensure fetch behavior
         stage.pipelineSignal.isValid.setAsReg() init(True)
+        // if current inst isn't flushed:
+        // if current inst isn't stuck: it will be set true
+        // if current inst is stuck: it will not change
+        // if current inst is flushed:
+        // if current inst isn't stuck, it will be set false
+        // if current inst is stuck, it will be set true
         when (stage.pipelineSignal.isFlushed) {
           stage.pipelineSignal.isValid := False
         }
