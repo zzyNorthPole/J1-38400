@@ -6,7 +6,7 @@ import spinal.core._
 import spinal.lib._
 import j1cpu.cpu.{CacheConfig, J1cpu, J1cpuConfig, vexriscv}
 import j1cpu.cpu.vexriscv.Plugin
-import spinal.lib.bus.amba4.axi.{Axi4, Axi4Config}
+import spinal.lib.bus.amba4.axi.{Axi4, Axi4Config, Axi4ReadOnly}
 import spinal.lib.fsm.{State, StateMachine}
 
 class ICache(cacheConfig: CacheConfig, axiConfig: Axi4Config, sim: Int) extends Component {
@@ -34,7 +34,7 @@ class ICache(cacheConfig: CacheConfig, axiConfig: Axi4Config, sim: Int) extends 
     val valid = out Bool() // if2
 
     // axi
-    val ibus = master(Axi4(axiConfig)).setIdle() // if2
+    val ibus = master(Axi4ReadOnly(axiConfig)).setIdle() // if2
   }
   noIoPrefix()
 

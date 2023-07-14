@@ -9,6 +9,8 @@ class PcManager extends Component {
     val isExceptionFlushed = in Bool()
     val isBranchPredictErrorFlushed = in Bool()
     val branchPredictCorrectAddr = in UInt (32 bits)
+//    val isBranchPredict = in Bool()
+//    val branchPredictAddr = in UInt(32 bits)
     val pc = out UInt (32 bits)
   }
   noIoPrefix()
@@ -22,11 +24,14 @@ class PcManager extends Component {
   when(!isStalled) {
     pcReg := pcReg + 4
   }
+//  when(isBranchPredict) {
+//    pcReg := branchPredictAddr
+//  }
   when(isBranchPredictErrorFlushed) {
     pcReg := branchPredictCorrectAddr
   }
   when(isExceptionFlushed) {
-    pcReg := U"32'hBFC00000"
+    pcReg := U"32'hBFC00380"
   }
   pc := pcReg
 }
