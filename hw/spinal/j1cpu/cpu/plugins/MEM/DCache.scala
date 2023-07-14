@@ -12,6 +12,8 @@ import j1cpu.cpu.vexriscv.Plugin
 class DCache(cacheConfig: CacheConfig, axiConfig: Axi4Config, sim: Int) extends Component {
   val io = new Bundle {
     // cpu
+    val flush = in Bool() // mem1
+
     val en = in Bool() // mem1
     val we = in Bits (4 bits) // mem1
     val addr = in UInt (32 bits) // mem1
@@ -79,6 +81,8 @@ class DCache(cacheConfig: CacheConfig, axiConfig: Axi4Config, sim: Int) extends 
   // MEM2: compare address and tag, if equal then goto to WB, else use a FSM to fix it
 
   val mem1 = new Area {
+    val flush = Bool()
+
     val en = Bool()
     val we = Bits (4 bits)
     val addr = UInt (32 bits)
@@ -91,6 +95,8 @@ class DCache(cacheConfig: CacheConfig, axiConfig: Axi4Config, sim: Int) extends 
     val correctTag = UInt (cacheConfig.tagWidth bits)
     val index = UInt (cacheConfig.indexWidth bits)
     val offset = UInt (cacheConfig.offsetWidth bits)
+
+    flush := io.flush
 
     en := io.en
     we := io.we
@@ -209,7 +215,8 @@ class DCache(cacheConfig: CacheConfig, axiConfig: Axi4Config, sim: Int) extends 
     val dirtys = Vec(RegInit(False), cacheConfig.ways)
 
     when(io.ready) {
-      en := mem1.en
+      en := mem1.en && !mem1.flush
+
       we := mem1.we
       addr := mem1.addr
       din := mem1.din
@@ -609,7 +616,7 @@ class DCache(cacheConfig: CacheConfig, axiConfig: Axi4Config, sim: Int) extends 
     val uncachedData = RegInit(U(0, 32 bits))
     val udbusInit = new Area {
       import io.udbus._
-      aw.addr := correctTag @@ index @@ offset // TODO maybe physical address error
+      aw.addr := correctTag @@ index @@ U(0, cacheConfig.offsetWidth bits) // TODO maybe physical address error
       aw.id := U(1, 5 bits);
       aw.len := U(0, 8 bits)
       aw.size := U(2, 3 bits) // 4 bytes each time
@@ -619,7 +626,7 @@ class DCache(cacheConfig: CacheConfig, axiConfig: Axi4Config, sim: Int) extends 
       aw.prot := B(0, 3 bits)
 
       w.data := din.asBits
-      w.strb := B((3 downto 0) -> true)
+      w.strb := we
       w.last := True
 
       ar.addr := correctTag @@ index @@ U(0, cacheConfig.offsetWidth bits) // TODO maybe physical address error
