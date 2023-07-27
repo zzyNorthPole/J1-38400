@@ -13,6 +13,7 @@ class ICache(cacheConfig: CacheConfig, axiConfig: Axi4Config, sim: Int) extends 
   val io = new Bundle {
     // cpu
     val flush = in Bool() // if1
+    val exception = in Bool() // if1
 
     val en = in Bool() // if1
     val we = in Bits (4 bits) // if1
@@ -23,15 +24,16 @@ class ICache(cacheConfig: CacheConfig, axiConfig: Axi4Config, sim: Int) extends 
     val cacheOp = in(CacheOp())
 
     // tlb
+    val cached = in Bool() // mem1 used for uncached
     val correctTag = in UInt (cacheConfig.tagWidth bits) // if1
 
     // communicate signal for pipeline pass
-    // ready recommendation:
-    // if2 stage en == 1: hit = 1 ready = 1
-    // if2 stage en == 1: hit = 0 wait until fsm back to idle to set ready = 1
-    // if2 stage en == 0: ready = 1
+    // isStalled recommendation:
+    // if2 stage en == 1: hit = 1 isStalled = 0
+    // if2 stage en == 1: hit = 0 wait until fsm back to idle to set isStalled = 0
+    // if2 stage en == 0: isStalled = 0
+    val isStalled = out Bool() // if2
     val ready = out Bool() // if2
-    val valid = out Bool() // if2
 
     // axi
     val ibus = master(Axi4ReadOnly(axiConfig)).setIdle() // if2
@@ -51,7 +53,7 @@ class ICache(cacheConfig: CacheConfig, axiConfig: Axi4Config, sim: Int) extends 
   }
 
   val validRams = Seq.fill(cacheConfig.ways) {
-    new Dram(cacheConfig.lines, 1, 0, sim)
+    new Dram(cacheConfig.lines, 1, 0, 2)
   }
 
   val dataRams = Seq.fill(cacheConfig.words) {
@@ -62,6 +64,7 @@ class ICache(cacheConfig: CacheConfig, axiConfig: Axi4Config, sim: Int) extends 
 
   val if1 = new Area {
     val flush = Bool()
+    val exception = Bool()
 
     val en = Bool()
     val we = Bits (4 bits)
@@ -70,11 +73,14 @@ class ICache(cacheConfig: CacheConfig, axiConfig: Axi4Config, sim: Int) extends 
     val cacheOpEn = Bool()
     val cacheOp = CacheOp()
 
+    val cached = Bool()
     val correctTag = UInt (cacheConfig.tagWidth bits)
+
     val index = UInt (cacheConfig.indexWidth bits)
     val offset = UInt (cacheConfig.offsetWidth bits)
 
     flush := io.flush
+    exception := io.exception
 
     en := io.en
     we := io.we
@@ -83,6 +89,7 @@ class ICache(cacheConfig: CacheConfig, axiConfig: Axi4Config, sim: Int) extends 
     cacheOpEn := io.cacheOpEn
     cacheOp := io.cacheOp
 
+    cached := io.cached
     correctTag := io.correctTag
     index := addr((cacheConfig.indexWidth + cacheConfig.offsetWidth - 1) downto cacheConfig.offsetWidth)
     offset := addr((cacheConfig.offsetWidth - 1) downto 0)
@@ -124,7 +131,7 @@ class ICache(cacheConfig: CacheConfig, axiConfig: Axi4Config, sim: Int) extends 
 
     val hits = Vec(Bool(), cacheConfig.ways)
     for (i <- 0 until cacheConfig.ways) {
-      hits(i) := valids(i) && (tags(i) === io.correctTag)
+      hits(i) := valids(i) && (tags(i) === correctTag)
     }
     val hit = hits.orR
     val hitWay = MuxOH(
@@ -147,7 +154,7 @@ class ICache(cacheConfig: CacheConfig, axiConfig: Axi4Config, sim: Int) extends 
     // random replace way generation, sequential
     val lfsrWidth = log2Up(cacheConfig.ways) + 2
     val lfsr = new Lfsr(lfsrWidth)
-    lfsr.io.en := io.en & io.ready
+    lfsr.io.en := io.en & !io.isStalled
     lfsr.io.seed := U((lfsrWidth - 1 downto 0) -> true)
     // actually if2.lfsrDout, put it here in order to avoid recursive definition
     val lfsrDout = UInt(lfsrWidth bits)
@@ -163,6 +170,8 @@ class ICache(cacheConfig: CacheConfig, axiConfig: Axi4Config, sim: Int) extends 
     val cacheOpEn = RegInit(False)
     val cacheOp = RegInit(CacheOp.indexInvalidateWriteBack)
 
+    val cached = RegInit(False)
+
     val tags = Vec(RegInit(U(0, cacheConfig.tagWidth bits)), cacheConfig.ways)
     val correctTag = RegInit(U(0, cacheConfig.tagWidth bits))
 
@@ -171,13 +180,15 @@ class ICache(cacheConfig: CacheConfig, axiConfig: Axi4Config, sim: Int) extends 
     val index = RegInit(U(0, cacheConfig.indexWidth bits))
     val offset = RegInit(U(0, cacheConfig.offsetWidth bits))
 
-    when(io.ready) {
-      en := if1.en && !if1.flush
+    when(!io.isStalled) {
+      en := if1.en && !if1.flush && !if1.exception
       we := if1.we
       addr := if1.addr
 
       cacheOpEn := if1.cacheOpEn
       cacheOp := if1.cacheOp
+
+      cached := if1.cached
 
       tags := if1.tags
       correctTag := if1.correctTag
@@ -190,7 +201,7 @@ class ICache(cacheConfig: CacheConfig, axiConfig: Axi4Config, sim: Int) extends 
 
     val hit = RegInit(False)
     val hitWay = RegInit(U(0, log2Up(cacheConfig.ways) bits))
-    when(io.ready) {
+    when(!io.isStalled) {
       hit := if1.hit
       hitWay := if1.hitWay
     }
@@ -231,17 +242,19 @@ class ICache(cacheConfig: CacheConfig, axiConfig: Axi4Config, sim: Int) extends 
 
     val ibusInit = new Area {
       import io.ibus._
-      ar.addr := correctTag @@ index @@ U(0, cacheConfig.offsetWidth bits) // TODO maybe physical address error
-      ar.id := U(1, 5 bits)
-      ar.len := U(cacheConfig.words - 1, 8 bits)
+      ar.addr := cached ? (correctTag @@ index @@ U(0, cacheConfig.offsetWidth bits)) | addr// TODO maybe physical address error
+      ar.id := U(1, 4 bits)
+      ar.len := cached ? U(cacheConfig.words - 1, 8 bits) | U(0, 8 bits)
       ar.size := U(2, 3 bits) // 4 bytes
-      ar.burst := B(1, 2 bits) // INCR
-      ar.lock := B(0, 1 bits)
+      ar.burst := cached ? B(1, 2 bits) | B(0, 2 bits) // cached INCR uncached FIXED
+      // ar.lock := B(0, 2 bits)
       ar.cache := B(0, 4 bits)
       ar.prot := B(0, 3 bits)
     }
     val reLife = RegInit(False)
     val count = RegInit(U(0, log2Up(cacheConfig.words) bits))
+    io.isStalled := True
+    io.ready := False
     io.dout := U(0, 32 bits)
     val readNewValid = CombInit(False)
     val readNewReady = CombInit(False)
@@ -274,7 +287,7 @@ class ICache(cacheConfig: CacheConfig, axiConfig: Axi4Config, sim: Int) extends 
         when(r.valid) {
           replaceWayDataReg(count) := r.data.asUInt
           count := count + 1
-          when(r.last && r.fire) {
+          when(r.last) {
             readNewReady := True
             goto(stateBoot)
           }
@@ -290,40 +303,44 @@ class ICache(cacheConfig: CacheConfig, axiConfig: Axi4Config, sim: Int) extends 
       val floodFill = new State()
 
       stateBoot.whenIsActive {
-        // combination
-        when(reLife) {
-          io.valid := True
-          io.ready := True
-        }.otherwise {
-          io.valid := en && hit
-          io.ready := !en || io.valid
-        }
-
-        // sequential
-        when(!io.ready) {
-          // sequential
-          reLife := True
-          replaceWayReg := replaceWay
+        when(cached && !cacheOpEn) {
           // combination
-          readNewValid := True
-          goto(readNew)
-        }.otherwise {
-          reLife := False
-          io.dout := reLife ? replaceWayDataReg(offset((cacheConfig.offsetWidth - 1) downto 2)) | data(hitWay)
+          when(reLife) {
+            io.ready := True
+            io.isStalled := False
+          }.otherwise {
+            io.ready := en && hit
+            io.isStalled := en && !hit
+          }
+
+          // sequential
+          when(io.isStalled) {
+            // sequential
+            reLife := True
+            replaceWayReg := replaceWay
+            // combination
+            readNewValid := True
+            goto(readNew)
+          }.otherwise {
+            reLife := False
+            io.dout := en ? (
+              reLife ? replaceWayDataReg(offset((cacheConfig.offsetWidth - 1) downto 2)) | data(hitWay)
+            ) | U(0, 32 bits)
+          }
         }
       }
 
       readNew.whenIsActive {
-        io.valid := False
         io.ready := False
+        io.isStalled := True
         when(readNewReady) {
           goto(floodFill)
         }
       }
 
       floodFill.whenIsActive {
-        io.valid := False
         io.ready := False
+        io.isStalled := True
 
         floodFillValid := True
         hit := True
@@ -348,7 +365,7 @@ class ICache(cacheConfig: CacheConfig, axiConfig: Axi4Config, sim: Int) extends 
         val curRam = validRams(i)
         val curWay = U(i, log2Up(cacheConfig.ways) bits)
         val cachedFloodFill = floodFillValid && (replaceWayReg === curWay)
-        val cacheOpStateBootInvalidateValid = (cacheOp === CacheOp.indexInvalidateWriteBack) ? io.valid | (io.valid && hit)
+        val cacheOpStateBootInvalidateValid = (cacheOp === CacheOp.indexInvalidateWriteBack) ? io.ready | (io.ready && hit)
         val cacheOpStateBootInvalidate = cacheOpEn && cacheOpStateBootInvalidateValid && (invalidateWay === curWay)
         curRam.io.ena := cachedFloodFill || cacheOpStateBootInvalidate
         curRam.io.wea := B(1, 1 bits)
@@ -368,6 +385,85 @@ class ICache(cacheConfig: CacheConfig, axiConfig: Axi4Config, sim: Int) extends 
         }
       }
     }
+
+    val uncachedData = RegInit(U(0, 32 bits))
+    val instUncachedReadValid = CombInit(False)
+    val instUncachedReadReady = CombInit(False)
+    val instUncachedReadFSM = new StateMachine {
+      import io.ibus._
+
+      setEntry(stateBoot)
+      disableAutoStart()
+
+      val readAr = new State()
+      val readR = new State()
+
+      stateBoot.whenIsActive {
+        when(instUncachedReadValid) {
+          goto(readAr)
+        }
+      }
+
+      readAr.whenIsActive {
+        ar.valid := True
+        when(ar.ready) {
+          count := 0
+          goto(readR)
+        }
+      }
+
+      readR.whenIsActive {
+        r.ready := True
+        when(r.valid) {
+          uncachedData := r.data.asUInt
+          when(r.last) {
+            instUncachedReadReady := True
+            goto(stateBoot)
+          }
+        }
+      }
+    }
+    val instUncachedFSM = new StateMachine {
+      setEntry(stateBoot)
+      disableAutoStart()
+
+      val read = new State()
+
+      stateBoot.whenIsActive {
+        when(!cached) {
+          // combination
+          when(reLife) {
+            io.ready := True
+            io.isStalled := False
+          }.otherwise {
+            io.ready := False
+            io.isStalled := en
+          }
+
+          // sequential
+          when(io.isStalled) {
+            reLife := True
+            when(en) {
+              instUncachedReadValid := True
+              goto(read)
+            }
+          }.otherwise {
+            reLife := False
+            io.dout := en ? uncachedData | U(0, 32 bits)
+          }
+        }
+      }
+
+      read.whenIsActive {
+        io.ready := False
+        io.isStalled := True
+
+        when(instUncachedReadReady) {
+          goto(stateBoot)
+        }
+      }
+    }
+    instUncachedFSM.reflectNames()
   }
   if2.setName("if2").reflectNames()
 
@@ -378,7 +474,7 @@ object ICacheGen {
   def main(args: Array[String]): Unit = {
     val spinalConfig = SpinalConfig(
       targetDirectory = "hw/gen",
-      defaultConfigForClockDomains = new J1cpuConfig().clockConfig
+      defaultConfigForClockDomains = J1cpuConfig().clockConfig
     )
 
     spinalConfig.generateVerilog(new ICache(CacheConfig(ways = 2, lines = 256, blockSize = 32), J1cpuConfig().axiConfig, 0))
