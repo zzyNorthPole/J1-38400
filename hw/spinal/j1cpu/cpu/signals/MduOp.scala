@@ -1,3 +1,15 @@
-package j1cpu.cpu.signals object MduOp {
+package j1cpu.cpu.signals
 
+import spinal.core.SpinalEnum
+
+object MduOp extends SpinalEnum {
+  val MUL = newElement()
+  val MULT = newElement()
+  val MULTU = newElement()
+  val DIV = newElement()
+  val DIVU = newElement()
+  val MFHI = newElement()
+  val MTHI = newElement()
+  val MFLO = newElement()
+  val MTLO = newElement()
 }
