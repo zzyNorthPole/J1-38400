@@ -83,8 +83,8 @@ trait Pipeline {
         // if current inst isn't stuck: it will be set true
         // if current inst is stuck: it will not change
         // if current inst is flushed:
-        // if current inst isn't stuck, it will be set false
-        // if current inst is stuck, it will be set true
+        // if current inst isn't stuck, it will be set true
+        // if current inst is stuck, it will be set false
         when (stage.pipelineSignal.isFlushed) {
           stage.pipelineSignal.isValid := False
         }
@@ -108,9 +108,11 @@ trait Pipeline {
 
       def updInputId(stageId: Int) = {
         lastInputId = Math.max(stageId, lastInputId)
+        lastOutputId = Math.max(stageId - 1, lastOutputId)
       }
 
       def updOutputId(stageId: Int) = {
+        lastInputId = Math.max(stageId, lastInputId)
         lastOutputId = Math.max(stageId, lastOutputId)
       }
     }
@@ -150,47 +152,39 @@ trait Pipeline {
     }
 
     for ((signal, info) <- inputOutputInfo) {
-      if (info.lastOutputId > info.lastInputId) info.lastInputId = info.lastOutputId
-      else if (info.lastOutputId < info.lastInputId) info.lastOutputId = info.lastInputId - 1
-    }
-
-    for ((signal, info) <- inputOutputInfo) {
-      // connect inputs -> outputs
-      for (i <- info.insertId to info.lastOutputId; stage = stages(i)) {
-        stage.output(signal)
-        val output = stage.outputs.getOrElse(signal, null)
-        output.setName(s"${stage.getName()}_${signal.getName()}_out")
-        if (output != null) {
-          val input = stage.input(signal)
-          input.setName(s"${stage.getName()}_${signal.getName()}_in")
-          output := input
-        }
-      }
-      // connect outputs -> inputs
       for (i <- info.insertId to info.lastInputId; stage = stages(i)) {
         stage.input(signal)
         val input = stage.inputs.getOrElse(signal, null)
         input.setName(s"${stage.getName()}_${signal.getName()}_in")
-        if (input != null) {
-          if (i == info.insertId) {
-            val insert = stage.inserts(signal)
-            insert.setName(s"${stage.getName()}_${signal.getName()}")
-            input := insert
-          }
-          else {
-            val pOutput = preStage(stage).output(signal)
-            pOutput.setName(s"${preStage(stage).getName()}_${signal.getName()}_out")
-            input := RegNextWhen(
-              pOutput,
-              // when current inst is flushed, valid will be set false, output -> input
-              // when current inst is stuck, it won't be changed, won't be changed
-              // when current inst isn't stuck:
-              // if previous inst is flushed, valid will be set false, output -> input
-              // if previous inst is stuck, valid will be set false, output -> input
-              // if previous inst isn't stuck, valid will be set to the previous value, output -> input (change and valid)
-              !stage.pipelineSignal.isStalled
-            ).setName(s"${preStage(stage).getName()}_${stage.getName()}_${signal.getName()}_reg")
-          }
+        if (i == info.insertId) {
+          val insert = stage.inserts(signal)
+          insert.setName(s"${stage.getName()}_${signal.getName()}")
+          input := insert
+        }
+        else {
+          val pOutput = preStage(stage).output(signal)
+          input := RegNextWhen(
+            pOutput,
+            // when current inst is flushed, valid will be set false, output -> input
+            // when current inst is stuck, it won't be changed, won't be changed
+            // when current inst isn't stuck:
+            // if previous inst is flushed, valid will be set false, output -> input
+            // if previous inst is stuck, valid will be set false, output -> input
+            // if previous inst isn't stuck, valid will be set to the previous value, output -> input (change and valid)
+            !stage.pipelineSignal.isStalled
+          ).setName(s"${preStage(stage).getName()}_${stage.getName()}_${signal.getName()}_reg")
+        }
+        val tryOutput = stage.outputs.getOrElse(signal, null)
+        if (tryOutput == null && i <= info.lastOutputId) {
+          stage.output(signal)
+          val output = stage.outputs.getOrElse(signal, null)
+          output.setName(s"${stage.getName()}_${signal.getName()}_out")
+          output := input
+        }
+        else if (tryOutput != null && i <= info.lastOutputId) {
+          stage.output(signal)
+          val output = stage.outputs.getOrElse(signal, null)
+          output.setName(s"${stage.getName()}_${signal.getName()}_out")
         }
       }
     }

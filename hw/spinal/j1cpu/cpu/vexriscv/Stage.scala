@@ -2,6 +2,7 @@ package j1cpu.cpu.vexriscv
 
 import spinal.core._
 import spinal.lib._
+import spinal.lib.pipeline.Stageable
 
 import scala.collection.mutable
 
