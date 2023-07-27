@@ -6,7 +6,6 @@ import spinal.lib._
 
 class Lfsr(width: Int) extends Component {
   val io = new Bundle {
-    val reset = in Bool()
     val en = in Bool()
     val seed = in UInt (width bits)
     val dout = out UInt (width bits)

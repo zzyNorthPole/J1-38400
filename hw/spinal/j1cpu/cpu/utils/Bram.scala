@@ -3,7 +3,7 @@ package j1cpu.cpu.utils
 import j1cpu.cpu.J1cpuConfig
 import spinal.core._
 import spinal.lib._
-import j1cpu.cpu.blackbox.{xpm_memory_sdpram, xpm_memory_sdpram_sim}
+import j1cpu.cpu.blackbox.{xpm_memory_sdpram, xpm_memory_sdpram_sim, xpm_memory_sdpram_sim2, xpm_memory_tdpram}
 
 // use4Data = 0 tag ram
 // use4Data = 1 data ram
@@ -23,8 +23,8 @@ class Bram(depth: Int, width: Int, use4Data: Int, sim: Int) extends Component {
 
   noIoPrefix()
 
-  if (sim == 0) {
-    val bram = new xpm_memory_sdpram(depth, width, use4Data)
+  if (sim == 2) {
+    val bram = new xpm_memory_sdpram_sim2(depth, width)
 
     import io._
 
@@ -35,6 +35,22 @@ class Bram(depth: Int, width: Int, use4Data: Int, sim: Int) extends Component {
 
     bram.io.enb := enb
     bram.io.addrb := addrb
+    doutb := bram.io.doutb
+  }
+  else if (sim == 0) {
+    val bram = new xpm_memory_tdpram(depth, width, use4Data)
+
+    import io._
+
+    bram.io.ena := ena
+    bram.io.wea := wea
+    bram.io.addra := addra
+    bram.io.dina := dina
+
+    bram.io.enb := enb
+    bram.io.web := B(0, (if (use4Data == 0) 1 else (width / 8)) bits)
+    bram.io.addrb := addrb
+    bram.io.dinb := U(0, width bits)
     doutb := bram.io.doutb
   }
   else {
@@ -60,6 +76,6 @@ object bramGen {
       defaultConfigForClockDomains = J1cpuConfig().clockConfig
     )
 
-    spinalConfig.generateVerilog(new Bram(256, 32, 1, 0))
+    spinalConfig.generateVerilog(new Bram(256, 1, 0, 2))
   }
 }

@@ -1,7 +1,7 @@
 package j1cpu.cpu.utils
 
 import j1cpu.cpu.J1cpuConfig
-import j1cpu.cpu.blackbox.{xpm_memory_dpdistram, xpm_memory_dpdistram_sim}
+import j1cpu.cpu.blackbox.{xpm_memory_dpdistram, xpm_memory_dpdistram_sim, xpm_memory_dpdistram_sim2}
 import spinal.core._
 import spinal.lib._
 
@@ -22,7 +22,22 @@ class Dram(depth: Int, width: Int, use4Data: Int, sim: Int) extends Component {
 
   noIoPrefix()
 
-  if (sim == 0) {
+  if (sim == 2) {
+    val dram = new xpm_memory_dpdistram_sim2(depth, width)
+
+    import io._
+
+    dram.io.ena := ena
+    dram.io.wea := wea
+    dram.io.addra := addra
+    dram.io.dina := dina
+    douta := dram.io.douta
+
+    dram.io.enb := enb
+    dram.io.addrb := addrb
+    doutb := dram.io.doutb
+  }
+  else if (sim == 0) {
     val dram = new xpm_memory_dpdistram(depth, width, use4Data)
 
     import io._
@@ -61,6 +76,6 @@ object dramGen {
       defaultConfigForClockDomains = J1cpuConfig().clockConfig
     )
 
-    spinalConfig.generateVerilog(new Dram(256, 32, 1, 1))
+    spinalConfig.generateVerilog(new Dram(256, 1, 0, 2))
   }
 }
