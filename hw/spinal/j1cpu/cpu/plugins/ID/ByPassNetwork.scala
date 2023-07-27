@@ -37,17 +37,26 @@ class ByPassNetwork(byPassConfig: ByPassConfig) extends Component {
       for (k <- 0 until byPassConfig.backendPass) {
         val tIdx = j * byPassConfig.backendPass + byPassConfig.backendPass - 1 - k
         val sIdx = j * byPassConfig.backendPass + k
-        hitInvalids(i)(tIdx) := hits(i)(tIdx) && sReady(sIdx)
+        hitInvalids(i)(tIdx) := hits(i)(tIdx) && !sReady(sIdx)
         hitMaybeInvalids(i)(tIdx) := hits(i)(tIdx)
       }
     }
   }
+
+  val hitsMapSDin = Vec(UInt(32 bits), byPassConfig.backendStage * byPassConfig.backendPass)
+  for (i <- 0 until byPassConfig.backendStage) {
+    for (j <- 0 until byPassConfig.backendPass) {
+      val tIdx = i * byPassConfig.backendPass + byPassConfig.backendPass - 1 - j
+      val sIdx = i * byPassConfig.backendPass + j
+      hitsMapSDin(tIdx) := sDin(sIdx)
+    }
+  }
   for (i <- 0 until byPassConfig.decoderPass) {
-    tDout(i) := hits(i).orR ? PriorityMux(hits(i), sDin) | tDin(i)
+    tDout(i) := hits(i).orR ? PriorityMux(hits(i), hitsMapSDin) | tDin(i)
   }
 
   for (i <- 0 until byPassConfig.decoderPass) {
-    stall(i) := tValid(i) &&
+    stall(i) := tValid(i) && hitMaybeInvalids(i).orR &&
       (OHMasking.first(hitMaybeInvalids(i)) === OHMasking.first(hitInvalids(i)))
   }
 }

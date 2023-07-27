@@ -13,6 +13,7 @@ class RegFile(regFillConfig: RegFillConfig) extends Component {
 
     val wPorts = new Bundle {
       val en = in Vec(Bool(), regFillConfig.wPorts)
+      val we = in Vec(Bits(4 bits), regFillConfig.wPorts)
       val addr = in Vec(UInt(5 bits), regFillConfig.wPorts)
       val din = in Vec(UInt(32 bits), regFillConfig.wPorts)
     }
@@ -21,20 +22,20 @@ class RegFile(regFillConfig: RegFillConfig) extends Component {
 
   import io._
 
-  val regFile = Mem(UInt (32 bits), 32)
+  val regFile = Vec(RegInit(U(0, 32 bits)), 32)
 
   for (i <- 0 until regFillConfig.rPorts) {
-    rPorts.dout(i) := regFile.readAsync(
-      address = rPorts.addr(i)
-    )
+    rPorts.dout(i) := regFile(rPorts.addr(i))
   }
 
   for (i <- 0 until regFillConfig.wPorts) {
-    regFile.write(
-      address = wPorts.addr(i),
-      data = wPorts.din(i),
-      enable = wPorts.en(i) && (wPorts.addr(i) =/= U(0, 5 bits))
-    )
+    when(wPorts.en(i) && (wPorts.addr(i) =/= U(0, 5 bits))) {
+      for (j <- 0 to 3) {
+        when(wPorts.we(i)(j) === True) {
+          regFile(wPorts.addr(i))((j * 8 + 7) downto (j * 8)) := wPorts.din(i)((j * 8 + 7) downto (j * 8))
+        }
+      }
+    }
   }
 }
 

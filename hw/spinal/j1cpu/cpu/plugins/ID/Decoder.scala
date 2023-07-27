@@ -1,7 +1,7 @@
 package j1cpu.cpu.plugins.ID
 
 import j1cpu.cpu.J1cpu
-import j1cpu.cpu.signals.{AluOp, CacheOp, JuOp, MemWe, WbSrc}
+import j1cpu.cpu.signals.{AluOp, CacheOp, Cp0Reg, JuOp, MduOp, MemOp, TlbOp, TuOp, WbSrc}
 import j1cpu.cpu.vexriscv.{Pipeline, Plugin}
 import spinal.core._
 import spinal.lib.MuxOH
@@ -17,19 +17,41 @@ class Decoder extends Component {
     }
     val immediate = out UInt (32 bits)
     // EX alu
+    val aluEn = out Bool()
     val aluOp = out(AluOp())
+    // EX mdu
+    val mduEn = out Bool()
+    val mduOp = out(MduOp())
     // EX ju
+    val juEn = out Bool()
     val juOp = out(JuOp())
     // MEM load/store/cache
-    val memEn = out(Bool())
-    val memW = out(Bool())
-    val memWe = out(MemWe())
-    val iCacheOpEn = out(Bool())
-    val dCacheOpEn = out(Bool())
+    val memEn = out Bool()
+    val memW = out Bool()
+    val memOp = out(MemOp())
+    val tlbOpEn = out Bool()
+    val tlbOp = out(TlbOp())
+    val iCacheOpEn = out Bool()
+    val dCacheOpEn = out Bool()
     val cacheOp = out(CacheOp())
+    // MEM cp0
+    val cp0En = out Bool()
+    val cp0W = out Bool()
+    val cp0Reg = out (Cp0Reg())
+    val cp0Select = out UInt (3 bits)
     val wbEn = out Bool()
     val wbSrc = out(WbSrc())
     val wbReg = out UInt (5 bits)
+    // EX tu
+    val tuEn = out Bool()
+    val tuOp = out(TuOp())
+
+    // exception
+    val eret = out Bool()
+    val syscall = out Bool()
+    val break = out Bool()
+    val reserveInst = out Bool()
+    val copUnusable = out Bool()
   }
   noIoPrefix()
 
@@ -63,6 +85,9 @@ class Decoder extends Component {
   val isJalr = isSpecial && isRtZero && (func === B"001001")
   val isMovz = isSpecial && isSaZero && (func === B"001010")
   val isMovn = isSpecial && isSaZero && (func === B"001011")
+  val isSyscall = isSpecial && (func === B"001100")
+  val isBreak = isSpecial && (func === B"001101")
+  val isSync = isSpecial && (func === B"001111") // nop
   val isMfhi = isSpecial && isRsZero && isRtZero && isSaZero && (func === B"010000")
   val isMthi = isSpecial && isRtZero && isRdZero && isSaZero && (func === B"010001")
   val isMflo = isSpecial && isRsZero && isRtZero && isSaZero && (func === B"010010")
@@ -90,11 +115,11 @@ class Decoder extends Component {
   val isMfc0 = isCop0 && (rs === B"00000") && isSaZero
   val isMtc0 = isCop0 && (rs === B"00100") && isSaZero
   val isTlbr = isCop0 && (rs === B"10000") && isRtZero && isRdZero && isSaZero && (func === B"000001")
-  val itTlbwi = isCop0 && (rs === B"10000") && isRtZero && isRdZero && isSaZero && (func === B"000010")
+  val isTlbwi = isCop0 && (rs === B"10000") && isRtZero && isRdZero && isSaZero && (func === B"000010")
   val isTlbwr = isCop0 && (rs === B"10000") && isRtZero && isRdZero && isSaZero && (func === B"000110")
   val isTlbp = isCop0 && (rs === B"10000") && isRtZero && isRdZero && isSaZero && (func === B"001000")
-  val isEret = isCop0 && (rs === B"10000") && isRtZero && isRdZero && isSaZero && (func === B"001100")
-  val isWait = isCop0 && (func === B"100000")
+  val isEret = isCop0 && (rs === B"10000") && isRtZero && isRdZero && isSaZero && (func === B"011000")
+  val isWait = isCop0 && (func === B"100000") // nop
   val isMul = isSpecial2 && isSaZero && (func === B"000010")
   val isClz = isSpecial2 && isSaZero && (func === B"100000")
   val isClo = isSpecial2 && isSaZero && (func === B"100001")
@@ -139,34 +164,59 @@ class Decoder extends Component {
   val isSw = opcode === B"101011"
   val isSwr = opcode === B"101110"
   val isCache = opcode === B"101111"
-  val isPref = opcode === B"110011"
+  val isPref = opcode === B"110011" // nop
 
   // j-type
   val isJ = opcode === B"000010"
   val isJal = opcode === B"000011"
 
-  rPorts.en(0) := isAdd || isAddu || isSub || isSubu || isAnd || isOr || isXor || isNor || isSlt || isSltu ||
-    isSllv || isSrlv || isSrav ||
-    isAddi || isAddiu || isSlti || isSltiu || isAndi || isOri || isXori ||
-    isLb || isLh || isLwl || isLw || isLbu || isLhu || isLwr ||
-    isSb || isSh || isSwl || isSw || isSwr ||
-    isClo || isClz ||
-    isMult || isMultu || isMul || isDiv || isDivu ||
-    isMadd || isMaddu || isMsub || isMsubu ||
-    isMthi || isMtlo ||
-    isMovn || isMovz ||
-    isBltz || isBgez || isBltzal || isBgezal || isBeq || isBne || isBlez || isBgtz
-  rPorts.en(1) := isAdd || isAddu || isSub || isSubu || isAnd || isOr || isXor || isNor || isSlt || isSltu ||
-    isSll || isSrl || isSra || isSllv || isSrlv || isSrav ||
-    isLwl || isLwr ||
-    isSb || isSh || isSwl || isSw || isSwr ||
-    isMult || isMultu || isMul || isDiv || isDivu ||
-    isMadd || isMaddu || isMsub || isMsubu ||
-    isMovn || isMovz ||
-    isBeq || isBne
+  rPorts.en(0) := (
+    isAdd || isAddu || isSub || isSubu || isAnd || isOr || isXor || isNor || isSlt || isSltu ||
+      isSllv || isSrlv || isSrav ||
+      isAddi || isAddiu || isSlti || isSltiu || isAndi || isOri || isXori ||
+      isLb || isLh || isLwl || isLw || isLbu || isLhu || isLwr ||
+      isSb || isSh || isSwl || isSw || isSwr ||
+      isClo || isClz ||
+      isMult || isMultu || isMul || isDiv || isDivu ||
+      isMadd || isMaddu || isMsub || isMsubu ||
+      isMthi || isMtlo ||
+      isMovn || isMovz ||
+      isBltz || isBgez || isBltzal || isBgezal || isBeq || isBne || isBlez || isBgtz ||
+      isJr || isJalr ||
+      isTeq || isTne || isTge || isTgeu || isTlt || isTltu ||
+      isTeqi || isTnei || isTgei || isTgeiu || isTlti || isTltiu ||
+      isMovn || isMovz
+  )
+  rPorts.en(1) := (
+    isAdd || isAddu || isSub || isSubu || isAnd || isOr || isXor || isNor || isSlt || isSltu ||
+      isSll || isSrl || isSra || isSllv || isSrlv || isSrav ||
+      isLwl || isLwr ||
+      isSb || isSh || isSwl || isSw || isSwr ||
+      isMult || isMultu || isMul || isDiv || isDivu ||
+      isMadd || isMaddu || isMsub || isMsubu ||
+      isMovn || isMovz ||
+      isBeq || isBne ||
+      isMtc0 ||
+      isTeq || isTne || isTge || isTgeu || isTlt || isTltu ||
+      isMovn || isMovz
+  )
   rPorts.addr(0) := rs.asUInt
   rPorts.addr(1) := rt.asUInt
 
+  aluEn := (
+    isAdd || isAddi || isAddu || isAddiu ||
+      isSub || isSubu ||
+      isAnd || isAndi ||
+      isOr || isOri ||
+      isXor || isXori ||
+      isNor ||
+      isSlt || isSlti || isSltu || isSltiu ||
+      isLui ||
+      isSll || isSllv ||
+      isSrl || isSrlv ||
+      isSra || isSrav ||
+      isMovn || isMovz
+  )
   import AluOp._
   aluOp := MuxOH(
     Vec(
@@ -183,7 +233,9 @@ class Decoder extends Component {
       isLui,
       isSll | isSllv,
       isSrl | isSrlv,
-      isSra | isSrav
+      isSra | isSrav,
+      isMovn,
+      isMovz
     ),
     Vec(
       ADD(),
@@ -199,10 +251,40 @@ class Decoder extends Component {
       LUI(),
       SLL(),
       SRL(),
-      SRA()
+      SRA(),
+      MOVN(),
+      MOVZ()
     )
   )
 
+  mduEn := isMul | isMult | isMultu | isDiv | isDivu | isMfhi | isMthi | isMflo | isMtlo
+  import MduOp._
+  mduOp := MuxOH(
+    Vec(
+      isMul,
+      isMult,
+      isMultu,
+      isDiv,
+      isDivu,
+      isMfhi,
+      isMthi,
+      isMflo,
+      isMtlo
+    ),
+    Vec(
+      MUL(),
+      MULT(),
+      MULTU(),
+      DIV(),
+      DIVU(),
+      MFHI(),
+      MTHI(),
+      MFLO(),
+      MTLO()
+    )
+  )
+
+  juEn := isJal | isJalr | isJ | isJr | isBltz | isBgez | isBltzal | isBgezal | isBeq | isBne | isBlez | isBgtz
   import JuOp._
   juOp := MuxOH(
     Vec(
@@ -240,8 +322,8 @@ class Decoder extends Component {
 
   memW := isSb | isSh | isSwl | isSw | isSwr
 
-  import MemWe._
-  memWe := MuxOH(
+  import MemOp._
+  memOp := MuxOH(
     Vec(
       isLb | isSb,
       isLh | isSh,
@@ -259,6 +341,23 @@ class Decoder extends Component {
       BU(),
       HU(),
       WR()
+    )
+  )
+
+  tlbOpEn := isTlbp | isTlbr | isTlbwi | isTlbwr
+  import TlbOp._
+  tlbOp := MuxOH(
+    Vec(
+      isTlbp,
+      isTlbr,
+      isTlbwi,
+      isTlbwr
+    ),
+    Vec(
+      TLBP(),
+      TLBR(),
+      TLBWI(),
+      TLBWR()
     )
   )
 
@@ -280,10 +379,55 @@ class Decoder extends Component {
       )
   )
 
+  cp0En := isMfc0 | isMtc0
+  cp0W := isMtc0
+  cp0Reg := (rd.asUInt).mux(
+    U(0, 5 bits) -> Cp0Reg.Index(),
+    U(1, 5 bits) -> Cp0Reg.Random(),
+    U(2, 5 bits) -> Cp0Reg.EntryLo0(),
+    U(3, 5 bits) -> Cp0Reg.EntryLo1(),
+    U(4, 5 bits) -> Cp0Reg.Context(),
+    U(5, 5 bits) -> Cp0Reg.PageMask(),
+    U(6, 5 bits) -> Cp0Reg.Wired(),
+    U(8, 5 bits) -> Cp0Reg.BadVAddr(),
+    U(9, 5 bits) -> Cp0Reg.Count(),
+    U(10, 5 bits) -> Cp0Reg.EntryHi(),
+    U(11, 5 bits) -> Cp0Reg.Compare(),
+    U(12, 5 bits) -> Cp0Reg.Status(),
+    U(13, 5 bits) -> Cp0Reg.Cause(),
+    U(14, 5 bits) -> Cp0Reg.EPC(),
+    U(15, 5 bits) -> Cp0Reg.PRIdEBase(),
+    U(16, 5 bits) -> Cp0Reg.Config(),
+    U(30, 5 bits) -> Cp0Reg.ErrorEPC(),
+    default -> Cp0Reg.Index()
+  )
+  cp0Select := func(2 downto 0).asUInt
+
+  tuEn := isTeq | isTeqi | isTne | isTnei | isTge | isTgei | isTgeu | isTgeiu | isTlt | isTlti | isTltu | isTltiu
+  tuOp := MuxOH(
+    Vec(
+      isTeq | isTeqi,
+      isTne | isTnei,
+      isTge | isTgei,
+      isTgeu | isTgeiu,
+      isTlt | isTlti,
+      isTltu | isTltiu
+    ),
+    Vec(
+      TuOp.TEQ(),
+      TuOp.TNE(),
+      TuOp.TGE(),
+      TuOp.TGEU(),
+      TuOp.TLT(),
+      TuOp.TLTU()
+    )
+  )
+
   immediate := MuxOH(
     Vec(
       isAddi | isAddiu | isSlti | isSltiu |
         isLb | isLh | isLwl | isLw | isLbu | isLhu | isLwr | isSb | isSh | isSwl | isSw | isSwr |
+        isTeqi | isTnei | isTgei | isTgeiu | isTlti | isTltiu |
         isCache | isPref,
       isAndi | isOri | isXori | isLui,
       isSll | isSrl | isSra,
@@ -304,9 +448,11 @@ class Decoder extends Component {
       isAnd | isOr | isXor | isNor | isAndi | isOri | isXori |
       isSll | isSrl | isSra | isSllv | isSrlv | isSrav |
       isSlt | isSltu | isSlti | isSltiu | isLui |
+      isMul | isMfhi | isMthi | isMflo | isMflo |
+      isJalr | isJal | isBltzal | isBgezal |
       isLb | isLh | isLwl | isLw | isLbu | isLhu | isLwr |
-      isMfhi | isMthi | isMflo | isMflo |
-      isMfc0 | isMtc0
+      isMfc0 |
+      isMovn | isMovz
   )
 
   import WbSrc._
@@ -316,14 +462,18 @@ class Decoder extends Component {
         isAnd | isOr | isXor | isNor | isAndi | isOri | isXori |
         isSll | isSrl | isSra | isSllv | isSrlv | isSrav |
         isSlt | isSltu | isSlti | isSltiu | isLui |
-        isMfhi | isMthi | isMflo | isMtlo,
-      isMfc0 | isMtc0,
-      isLb | isLh | isLwl | isLw | isLbu | isLhu | isLwr
+        isMovn | isMovz,
+      isMul | isMfhi | isMflo,
+      isJalr | isJal | isBltzal | isBgezal,
+      isLb | isLh | isLwl | isLw | isLbu | isLhu | isLwr,
+      isMfc0
     ),
     Vec(
       Alu(),
-      Cp0(),
-      DCache()
+      Mdu(),
+      Ju(),
+      DCache(),
+      Cp0()
     )
   )
 
@@ -337,12 +487,14 @@ class Decoder extends Component {
         isMul |
         isMfhi | isMflo |
         isMovn | isMovz |
-        isJalr | isJal,
+        isJalr | isJal |
+        isMovn | isMovz,
       isAddi | isAddiu |
         isAndi | isOri | isXori |
         isSlti | isSltiu | isLui |
-        isLb | isLh | isLwl | isLw | isLbu | isLhu | isLwr,
-      isBltzal | isBgezal | isJal
+        isLb | isLh | isLwl | isLw | isLbu | isLhu | isLwr |
+        isMfc0,
+      isBltzal | isBgezal | isJal | isJalr
     ),
     Vec(
       rd,
@@ -350,4 +502,49 @@ class Decoder extends Component {
       B"11111"
     )
   ).asUInt
+
+  eret := isEret
+  syscall := isSyscall
+  break := isBreak
+  reserveInst := ~(
+    isAdd | isAddu | isSub | isSubu | isAnd | isOr | isXor | isNor |
+      isSll | isSrl | isSra | isSllv | isSrlv | isSrav |
+      isSlt | isSltu |
+      isAddi | isAddiu | isSlti | isSltiu | isAndi | isOri | isXori | isLui |
+      isLb | isLh | isLwl | isLw | isLbu | isLhu | isLwr |
+      isSb | isSh | isSwl | isSw | isSwr |
+      isMult | isMultu | isDiv | isDivu | isMul |
+      isMfhi | isMthi |
+      isMflo | isMtlo |
+      isBltz | isBgez | isBltzal | isBgezal | isBeq | isBne | isBlez | isBgtz |
+      isJr | isJalr | isJ | isJal |
+      isMfc0 | isMtc0 |
+      isSyscall | isBreak | isSync | isWait |
+      isCache | isPref |
+      isTlbr | isTlbwi | isTlbwr | isTlbp |
+      isEret |
+      isTeq | isTne | isTge | isTgeu | isTlt | isTltu |
+      isTeqi | isTnei | isTgei | isTgeiu | isTlti | isTltiu |
+      isMovn | isMovz
+  )
+  copUnusable := (isMfc0 || isMtc0) && !rd.asUInt.mux(
+    U(0, 5 bits) -> (cp0Select === U(0, 3 bits)),
+    U(1, 5 bits) -> (cp0Select === U(0, 3 bits)),
+    U(2, 5 bits) -> (cp0Select === U(0, 3 bits)),
+    U(3, 5 bits) -> (cp0Select === U(0, 3 bits)),
+    U(4, 5 bits) -> (cp0Select === U(0, 3 bits)),
+    U(5, 5 bits) -> (cp0Select === U(0, 3 bits)),
+    U(6, 5 bits) -> (cp0Select === U(0, 3 bits)),
+    U(8, 5 bits) -> (cp0Select === U(0, 3 bits)),
+    U(9, 5 bits) -> (cp0Select === U(0, 3 bits)),
+    U(10, 5 bits) -> (cp0Select === U(0, 3 bits)),
+    U(11, 5 bits) -> (cp0Select === U(0, 3 bits)),
+    U(12, 5 bits) -> (cp0Select === U(0, 3 bits)),
+    U(13, 5 bits) -> (cp0Select === U(0, 3 bits)),
+    U(14, 5 bits) -> (cp0Select === U(0, 3 bits)),
+    U(15, 5 bits) -> (cp0Select === U(0, 3 bits) || cp0Select === U(1, 3 bits)),
+    U(16, 5 bits) -> (cp0Select === U(0, 3 bits) || cp0Select === U(1, 3 bits)),
+    U(30, 5 bits) -> (cp0Select === U(0, 3 bits)),
+    default -> False
+  )
 }
