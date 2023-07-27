@@ -38,6 +38,7 @@ class Cp0(config: J1cpuConfig) extends Component {
     val tlbp = in Bool()
     val tlbpHit = in Bool()
     val tlbpDin = in UInt (log2Up(config.tlbConfig.lines) bits)
+    val tlbpDout = out(new TLBRequest)
     val tlbr = in Bool()
     val tlbrAddr = out UInt(log2Up(config.tlbConfig.lines) bits)
     val tlbrDin = in(new TLBItem)
@@ -304,6 +305,7 @@ class Cp0(config: J1cpuConfig) extends Component {
     EntryHi.VPN2 := din(31 downto 13)
     EntryHi.ASID := din(7 downto 0)
   }
+  tlbpDout.VPN @@ tlbpDout.ASID := EntryHi.VPN2 @@ U(0, 1 bits) @@ EntryHi.ASID
   tlbwDout.VPN2 @@ tlbwDout.ASID:= EntryHi.VPN2 @@ EntryHi.ASID
 
   // cp0 reg 11, select 0

@@ -65,7 +65,7 @@ class AxiCrossbar(axiConfig: Axi4Config) extends Component {
       }
     }
   }
-  when(cpuBus.r.fire) {
+  when(cpuBus.r.valid && cpuBus.r.last) {
     rBusy := False
   }
 
@@ -76,7 +76,7 @@ class AxiCrossbar(axiConfig: Axi4Config) extends Component {
   when(!wBusy && awReq) {
     wBusy := True
     for (i <- 0 to 1) {
-      when(writeBus(i).ar.valid === True) {
+      when(writeBus(i).aw.valid === True) {
         wArbitrate := i
       }
     }
