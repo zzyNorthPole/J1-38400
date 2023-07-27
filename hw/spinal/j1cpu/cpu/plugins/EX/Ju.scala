@@ -5,9 +5,9 @@ import spinal.core._
 
 class Ju extends Component {
   val io = new Bundle {
+    val en = in Bool()
     val juOp = in(JuOp())
-    val din1 = in SInt(32 bits)
-    val din2 = in SInt(32 bits)
+    val din1, din2 = in SInt(32 bits)
     val pc = in UInt(32 bits)
     val offset = in UInt(32 bits)
     val predictPc = in UInt(32 bits)
@@ -38,11 +38,11 @@ class Ju extends Component {
     JALR -> din1.asUInt,
     J -> offset,
     JAL -> offset,
-    default -> (pc + offset)
+    default -> (pc + 4 + offset)
   )
 
   link := pc + 8
   correctPc := result ? jumpPc | link
 
-  flush := correctPc === predictPc
+  flush := en && (correctPc =/= predictPc)
 }

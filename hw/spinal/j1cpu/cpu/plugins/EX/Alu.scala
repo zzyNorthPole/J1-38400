@@ -1,16 +1,18 @@
 package j1cpu.cpu.plugins.EX
 
-import j1cpu.cpu.signals
+import j1cpu.cpu.{J1cpuConfig, signals}
 import spinal.core._
 import j1cpu.cpu.signals._
 
 class Alu extends Component {
   // For all other data types, you may have to add some brackets around it. Sorry, this is a Scala limitation.
   val io = new Bundle {
-    val din1, din2 = in UInt (32 bits)
+    val en = in Bool()
     val aluOp = in(AluOp())
+    val din1, din2 = in UInt (32 bits)
     val dout = out UInt (32 bits)
-    val aluOverflow = out Bool()
+    val movFail = out Bool()
+    val overflow = out Bool()
   }
   noIoPrefix()
 
@@ -31,14 +33,33 @@ class Alu extends Component {
     SLTU -> (U(0, 31 bits) @@ (din1 < din2)),
     SLL -> (din2 |<< shamt),
     SRL -> (din2 |>> shamt),
-    SRA -> (din2 >> shamt),
-    LUI -> (din2(15 downto 0) @@ U(0, 16 bits))
+    SRA -> (din2.asSInt >> shamt).asUInt,
+    LUI -> (din2(15 downto 0) @@ U(0, 16 bits)),
+    MOVN -> din1,
+    MOVZ -> din1
   )
 
-  aluOverflow := aluOp.mux(
+  movFail := en && aluOp.mux(
+    MOVN -> (din2 === U(0, 32 bits)),
+    MOVZ -> (din2 =/= U(0, 32 bits)),
+    default -> False
+  )
+
+  overflow := en && aluOp.mux(
     ADD -> (din1(31) === din2(31) && din1(31) =/= dout(31)),
     SUB -> (din1(31) =/= din2(31) && din1(31) =/= dout(31)),
-    default -> Bool(false)
+    default -> False
   )
 
+}
+
+object AluGen {
+  def main(args: Array[String]): Unit = {
+    val spinalConfig = SpinalConfig(
+      targetDirectory = "hw/gen",
+      defaultConfigForClockDomains = J1cpuConfig().clockConfig
+    )
+
+    spinalConfig.generateVerilog(new Alu())
+  }
 }
