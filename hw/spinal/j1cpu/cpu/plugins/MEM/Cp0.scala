@@ -1,4 +1,4 @@
-package j1cpu.cpu.plugins.CP0
+package j1cpu.cpu.plugins.MEM
 
 import j1cpu.cpu.J1cpuConfig
 import j1cpu.cpu.plugins.MMU.{TLBItem, TLBRequest}
@@ -45,6 +45,12 @@ class Cp0(config: J1cpuConfig) extends Component {
     val tlbw = in Bool() // 1 for tlbwr 0 for tlbwi
     val tlbwAddr = out UInt(log2Up(config.tlbConfig.lines) bits)
     val tlbwDout = out(new TLBItem)
+
+    val debug = new Bundle {
+      val count = out UInt(32 bits)
+      val random = out UInt(32 bits)
+      val cause = out UInt(32 bits)
+    }
   }
   noIoPrefix()
 
@@ -253,18 +259,40 @@ class Cp0(config: J1cpuConfig) extends Component {
   // cp0 reg 2, select 0
   // cp0 reg 3, select 0
   when(tlbr) {
-    EntryLo0.PFN @@ EntryLo0.C @@ EntryLo0.D @@ EntryLo0.V @@ EntryLo0.G := tlbrDin.PFN0 @@ tlbrDin.C0 @@ tlbrDin.D0 @@ tlbrDin.V0 @@ tlbrDin.G
-    EntryLo1.PFN @@ EntryLo1.C @@ EntryLo1.D @@ EntryLo1.V @@ EntryLo1.G := tlbrDin.PFN1 @@ tlbrDin.C1 @@ tlbrDin.D1 @@ tlbrDin.V1 @@ tlbrDin.G
+    EntryLo0.PFN := tlbrDin.PFN0
+    EntryLo0.C := tlbrDin.C0
+    EntryLo0.D := tlbrDin.D0.asUInt
+    EntryLo0.V := tlbrDin.V0.asUInt
+    EntryLo0.G := tlbrDin.G.asUInt
+    EntryLo1.PFN := tlbrDin.PFN1
+    EntryLo1.C := tlbrDin.C1
+    EntryLo1.D := tlbrDin.D1.asUInt
+    EntryLo1.V := tlbrDin.V1.asUInt
+    EntryLo1.G := tlbrDin.G.asUInt
   }.otherwise {
     when(en && addr === Cp0Reg.EntryLo0) {
-      (EntryLo0.PFN @@ EntryLo0.C @@ EntryLo0.D @@ EntryLo0.V @@ EntryLo0.G) := din(25 downto 0)
+      EntryLo0.PFN := din(25 downto 6)
+      EntryLo0.C := din(5 downto 3)
+      EntryLo0.D := din(2 downto 2)
+      EntryLo0.V := din(1 downto 1)
+      EntryLo0.G := din(0 downto 0)
     }
     when(en && addr === Cp0Reg.EntryLo1) {
-      (EntryLo1.PFN @@ EntryLo1.C @@ EntryLo1.D @@ EntryLo1.V @@ EntryLo1.G) := din(25 downto 0)
+      EntryLo1.PFN := din(25 downto 6)
+      EntryLo1.C := din(5 downto 3)
+      EntryLo1.D := din(2 downto 2)
+      EntryLo1.V := din(1 downto 1)
+      EntryLo1.G := din(0 downto 0)
     }
   }
-  tlbwDout.PFN0 @@ tlbwDout.C0 @@ tlbwDout.D0 @@ tlbwDout.V0 := EntryLo0.PFN @@ EntryLo0.C @@ EntryLo0.D @@ EntryLo0.V
-  tlbwDout.PFN1 @@ tlbwDout.C1 @@ tlbwDout.D1 @@ tlbwDout.V1 := EntryLo1.PFN @@ EntryLo1.C @@ EntryLo1.D @@ EntryLo1.V
+  tlbwDout.PFN0 := EntryLo0.PFN
+  tlbwDout.C0 := EntryLo0.C
+  tlbwDout.D0 := EntryLo0.D.asBool
+  tlbwDout.V0 := EntryLo0.V.asBool
+  tlbwDout.PFN1 := EntryLo1.PFN
+  tlbwDout.C1 := EntryLo1.C
+  tlbwDout.D1 := EntryLo1.D.asBool
+  tlbwDout.V1 := EntryLo1.V.asBool
   tlbwDout.G := (EntryLo0.G & EntryLo1.G).asBool
 
   // cp0 reg 4, select 0
@@ -300,13 +328,16 @@ class Cp0(config: J1cpuConfig) extends Component {
   when(ex && (exOp === Exception.TLBL || exOp === Exception.TLBS || exOp === Exception.MOD)) {
     EntryHi.VPN2 := badTLBRequest.VPN(19 downto 1)
   }.elsewhen(tlbr) {
-    EntryHi.VPN2 @@ EntryHi.ASID := tlbrDin.VPN2 @@ tlbrDin.ASID
+    EntryHi.VPN2 := tlbrDin.VPN2
+    EntryHi.ASID := tlbrDin.ASID
   }.elsewhen(en && addr === Cp0Reg.EntryHi) {
     EntryHi.VPN2 := din(31 downto 13)
     EntryHi.ASID := din(7 downto 0)
   }
-  tlbpDout.VPN @@ tlbpDout.ASID := EntryHi.VPN2 @@ U(0, 1 bits) @@ EntryHi.ASID
-  tlbwDout.VPN2 @@ tlbwDout.ASID:= EntryHi.VPN2 @@ EntryHi.ASID
+  tlbpDout.VPN := EntryHi.VPN2 @@ U(0, 1 bits)
+  tlbpDout.ASID := EntryHi.ASID
+  tlbwDout.VPN2 := EntryHi.VPN2
+  tlbwDout.ASID := EntryHi.ASID
 
   // cp0 reg 11, select 0
   when(en && addr === Cp0Reg.Compare) {
@@ -338,7 +369,7 @@ class Cp0(config: J1cpuConfig) extends Component {
   }
   Cause.IP(7) := extInt(5) | (count === compare)
   Cause.IP(6 downto 2) := extInt(4 downto 0).asUInt
-  when(en && addr === Cp0Reg.Compare) {
+  when(en && addr === Cp0Reg.Cause) {
     Cause.IV := din(23 downto 23)
     Cause.IP(1 downto 0) := din(9 downto 8)
   }
@@ -348,7 +379,7 @@ class Cp0(config: J1cpuConfig) extends Component {
 
   // cp0 reg 14, select 0
   when(ex && Status.EXL === U(0, 1 bits)) {
-    EPC.EPC := (Cause.BD === U(0, 1 bits)) ? (badPc - 4) | badPc
+    EPC.EPC := delaySlot ? (badPc - 4) | badPc
   }.elsewhen(en && addr === Cp0Reg.EPC) {
     EPC.EPC := din
   }
@@ -365,20 +396,25 @@ class Cp0(config: J1cpuConfig) extends Component {
   }
 
   val tlbRefillException = (exOp === Exception.TLBL || exOp === Exception.TLBS) && !tlbHit
+  val intException = (exOp === Exception.INT) && Cause.IV(0) && !Status.BEV(0)
   trapPc := (
-    ((Status.BEV === U(1, 1 bits)) ? U"32'hBFC00200" | eBase) +
-      MuxOH(
-        Vec(
-          eret,
-          ex && tlbRefillException,
-          ex && ~tlbRefillException
-        ),
-        Vec(
-          (Status.ERL === U(1, 1 bits)) ? errorEPC | epc,
-          U(0, 32 bits),
-          U"32'h00000180"
+    eret ? (
+      (Status.ERL === U(1, 1 bits)) ? errorEPC | epc
+    ) | (
+      ((Status.BEV === U(1, 1 bits)) ? U"32'hBFC00200" | eBase) +
+        MuxOH(
+          Vec(
+            ex && tlbRefillException,
+            ex && intException,
+            ex && ~tlbRefillException
+          ),
+          Vec(
+            U(0, 32 bits),
+            U"32'h00000200",
+            U"32'h00000180"
+          )
         )
-      )
+    )
   )
 
   interrupt := (Status.IE === U(1, 1 bits)) && (Status.EXL === U(0, 1 bits)) && (Status.ERL === U(0, 1 bits)) && ((Status.IM & Cause.IP).orR === True)
@@ -402,4 +438,19 @@ class Cp0(config: J1cpuConfig) extends Component {
     Cp0Reg.Config -> ((select(2 downto 1) === U(0, 2 bits)) ? ((select(0) === True) ? config1 | config0) | U(0, 32 bits)),
     Cp0Reg.ErrorEPC -> errorEPC
   )
+
+  debug.count := count
+  debug.random := random
+  debug.cause := cause
+}
+
+object Cp0Gen {
+  def main(args: Array[String]): Unit = {
+    val spinalConfig = SpinalConfig(
+      targetDirectory = "hw/gen",
+      defaultConfigForClockDomains = J1cpuConfig().clockConfig
+    )
+
+    spinalConfig.generateVerilog(new Cp0(J1cpuConfig()))
+  }
 }
