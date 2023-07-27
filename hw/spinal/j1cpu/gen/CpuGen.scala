@@ -14,6 +14,6 @@ object CpuGen {
       )
     )
 
-    spinalConfig.generateVerilog(new J1cpu(new J1cpuSignal))
+    spinalConfig.generateVerilog(new J1cpu(J1cpuConfig(), new J1cpuSignal))
   }
 }
