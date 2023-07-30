@@ -134,14 +134,18 @@ class DCache(cacheConfig: CacheConfig, axiConfig: Axi4Config, sim: Int) extends 
         for (j <- 0 until cacheConfig.ways) {
           val curRam = dataRams(i)(j)
           curRam.io.enb := en
+          curRam.io.web := B(0, 4 bits)
           curRam.io.addrb := index
+          curRam.io.dinb := U(0, 32 bits)
         }
       }
 
       for (i <- 0 until cacheConfig.ways) {
         val curRam = dirtyRams(i)
         curRam.io.enb := en
+        curRam.io.web := B(0, 1 bits)
         curRam.io.addrb := index
+        curRam.io.dinb := U(0, 1 bits)
       }
     }
 
@@ -614,7 +618,7 @@ class DCache(cacheConfig: CacheConfig, axiConfig: Axi4Config, sim: Int) extends 
         val cachedFloodFill = floodFillValid && (replaceWayReg === curWay)
         val cachedStateBootWrite = cached && !cacheOpEn && io.ready && (writeWay === curWay)
         curRam.io.ena := cachedFloodFill || cachedStateBootWrite
-        curRam.io.wea := B(1, 1 bits)
+        curRam.io.wea := cachedFloodFill ? B(1, 1 bits) | we.orR.asBits
         curRam.io.addra := index
         curRam.io.dina := cachedFloodFill ? U(0, 1 bits) | U(1, 1 bits)
       }
@@ -623,11 +627,21 @@ class DCache(cacheConfig: CacheConfig, axiConfig: Axi4Config, sim: Int) extends 
     val uncachedData = RegInit(U(0, 32 bits))
     val udbusInit = new Area {
       import io.udbus._
-      aw.addr := addr // TODO maybe physical address error
+      aw.addr := we.mux(
+        B"4'b1111" -> addr(31 downto 2) @@ U(0, 2 bits),
+        B"4'b1100" -> addr(31 downto 1) @@ U(0, 1 bits),
+        B"4'b0011" -> addr(31 downto 1) @@ U(0, 1 bits),
+        default -> addr
+      ) // TODO maybe physical address error
       aw.id := U(1, 4 bits);
       aw.len := U(0, 8 bits)
-      aw.size := U(2, 3 bits) // 4 bytes each time
-      aw.burst := B(0, 2 bits) // FIXED
+      aw.size := we.mux(
+        B"4'b1111" -> U"3'b010",
+        B"4'b1100" -> U"3'b001",
+        B"4'b0011" -> U"3'b001",
+        default -> U"3'b000"
+      ) // 4 bytes each time
+      aw.burst := B(1, 2 bits) // INCR
       // aw.lock := B(0, 2 bits)
       aw.cache := B(0, 4 bits)
       aw.prot := B(0, 3 bits)
@@ -636,11 +650,21 @@ class DCache(cacheConfig: CacheConfig, axiConfig: Axi4Config, sim: Int) extends 
       w.strb := we
       w.last := True
 
-      ar.addr := addr // TODO maybe physical address error
+      ar.addr := we.mux(
+        B"4'b1111" -> addr(31 downto 2) @@ U(0, 2 bits),
+        B"4'b1100" -> addr(31 downto 1) @@ U(0, 1 bits),
+        B"4'b0011" -> addr(31 downto 1) @@ U(0, 1 bits),
+        default -> addr
+      ) // TODO maybe physical address error
       ar.id := U(1, 4 bits)
       ar.len := U(0, 8 bits)
-      ar.size := U(2, 3 bits) // 4 bytes
-      ar.burst := B(0, 2 bits) // FIXED
+      ar.size := we.mux(
+        B"4'b1111" -> U"3'b010",
+        B"4'b1100" -> U"3'b001",
+        B"4'b0011" -> U"3'b001",
+        default -> U"3'b000"
+      ) // 4 bytes
+      ar.burst := B(1, 2 bits) // INCR
       // ar.lock := B(0, 2 bits)
       ar.cache := B(0, 4 bits)
       ar.prot := B(0, 3 bits)
