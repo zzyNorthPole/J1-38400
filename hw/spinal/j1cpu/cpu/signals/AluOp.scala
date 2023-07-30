@@ -19,4 +19,6 @@ object AluOp extends SpinalEnum {
   val SRA = newElement()
   val MOVN = newElement()
   val MOVZ = newElement()
+  val CLO = newElement()
+  val CLZ = newElement()
 }
