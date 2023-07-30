@@ -14,7 +14,7 @@ class xpm_memory_sdpram(depth: Int, width: Int, use4Data: Int) extends BlackBox 
   addGeneric("READ_DATA_WIDTH_B", width)
   addGeneric("READ_LATENCY_B", 1)
   addGeneric("WRITE_DATA_WIDTH_A", width)
-  addGeneric("WRITE_MODE_B", "write_first")
+  addGeneric("WRITE_MODE_B", "read_first")
 
   val io = new Bundle {
     val clka = in Bool()
