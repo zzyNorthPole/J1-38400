@@ -100,7 +100,7 @@ class ExDescription extends Plugin[J1cpu] {
       )
       output(EX_BAD_ADDR) := input(EX_EN) ? input(EX_BAD_ADDR) | input(MEM_ADDRESS)
 
-      service[IdDescription].byPassNetwork.io.sValid(0) := pipelineSignal.isValid && input(WB_EN)
+      service[IdDescription].byPassNetwork.io.sValid(0) := pipelineSignal.isValid && input(WB_EN) && !alu.io.movFail
       service[IdDescription].byPassNetwork.io.sReady(0) := !input(MEM_EN) && !input(CP0_EN)
       service[IdDescription].byPassNetwork.io.sAddr(0) := input(WB_REG)
       service[IdDescription].byPassNetwork.io.sDin(0) := input(WB_SRC).mux(
