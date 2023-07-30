@@ -66,19 +66,19 @@ class IfDescription(config: J1cpuConfig) extends Plugin[J1cpu] {
       insert(EX_BAD_TLB_REQUEST).VPN := iMmu.io.tlb.VPN
       insert(EX_BAD_TLB_REQUEST).ASID := service[MemDescription].cp0.io.tlbpDout.ASID
 
-      iCache.io.flush := pipelineSignal.isFlushed
-      iCache.io.exception := pipelineSignal.isValid && input(EX_EN)
-      iCache.io.en := pipelineSignal.isValid && !pipelineSignal.isStalled
-      iCache.io.we := B(0, 4 bits)
-      iCache.io.addr := iMmu.io.phyAddr
-      iCache.io.cached := iMmu.io.cached
-      iCache.io.correctTag := iMmu.io.phyAddr(31 downto 32 - config.cacheConfig.tagWidth)
+      iCache.io.fetch.flush := pipelineSignal.isFlushed
+      iCache.io.fetch.exception := pipelineSignal.isValid && input(EX_EN)
+      iCache.io.fetch.en := pipelineSignal.isValid && !pipelineSignal.isStalled
+      iCache.io.fetch.we := B(0, 4 bits)
+      iCache.io.fetch.addr := iMmu.io.phyAddr
+      iCache.io.fetch.cached := iMmu.io.cached
+      iCache.io.fetch.correctTag := iMmu.io.phyAddr(31 downto 32 - config.cacheConfig.tagWidth)
     }
 
     IF2 plug new Area {
       import IF2._
       pipelineSignal.flush := False
-      pipelineSignal.stall := iCache.io.isStalled
+      pipelineSignal.stall := iCache.io.fetch.isStalled
 
       // temp set branch predict ports low
       pcManager.io.isBranchPredict := pipelineSignal.isValid && !pipelineSignal.isStalled && False
@@ -86,14 +86,14 @@ class IfDescription(config: J1cpuConfig) extends Plugin[J1cpu] {
 
       val instReg = RegInit(U(0, 32 bits))
       val instRegValid = RegInit(False)
-      when(iCache.io.ready) {
+      when(iCache.io.fetch.ready) {
         instRegValid := True
-        instReg := iCache.io.dout
+        instReg := iCache.io.fetch.dout
       }
       when(!pipelineSignal.isStalled) {
         instRegValid := False
       }
-      insert(INST) := (instRegValid ? instReg | iCache.io.dout).asBits
+      insert(INST) := (instRegValid ? instReg | iCache.io.fetch.dout).asBits
     }
   }
 }
