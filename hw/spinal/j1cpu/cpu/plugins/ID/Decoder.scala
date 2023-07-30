@@ -215,7 +215,8 @@ class Decoder extends Component {
       isSll || isSllv ||
       isSrl || isSrlv ||
       isSra || isSrav ||
-      isMovn || isMovz
+      isMovn || isMovz ||
+      isClo || isClz
   )
   import AluOp._
   aluOp := MuxOH(
@@ -235,7 +236,9 @@ class Decoder extends Component {
       isSrl | isSrlv,
       isSra | isSrav,
       isMovn,
-      isMovz
+      isMovz,
+      isClo,
+      isClz
     ),
     Vec(
       ADD(),
@@ -253,7 +256,9 @@ class Decoder extends Component {
       SRL(),
       SRA(),
       MOVN(),
-      MOVZ()
+      MOVZ(),
+      CLO(),
+      CLZ()
     )
   )
 
@@ -452,7 +457,8 @@ class Decoder extends Component {
       isJalr | isJal | isBltzal | isBgezal |
       isLb | isLh | isLwl | isLw | isLbu | isLhu | isLwr |
       isMfc0 |
-      isMovn | isMovz
+      isMovn | isMovz |
+      isClo | isClz
   )
 
   import WbSrc._
@@ -462,7 +468,8 @@ class Decoder extends Component {
         isAnd | isOr | isXor | isNor | isAndi | isOri | isXori |
         isSll | isSrl | isSra | isSllv | isSrlv | isSrav |
         isSlt | isSltu | isSlti | isSltiu | isLui |
-        isMovn | isMovz,
+        isMovn | isMovz |
+        isClo | isClz,
       isMul | isMfhi | isMflo,
       isJalr | isJal | isBltzal | isBgezal,
       isLb | isLh | isLwl | isLw | isLbu | isLhu | isLwr,
@@ -488,7 +495,8 @@ class Decoder extends Component {
         isMfhi | isMflo |
         isMovn | isMovz |
         isJalr | isJal |
-        isMovn | isMovz,
+        isMovn | isMovz |
+        isClo | isClz,
       isAddi | isAddiu |
         isAndi | isOri | isXori |
         isSlti | isSltiu | isLui |
@@ -525,7 +533,8 @@ class Decoder extends Component {
       isEret |
       isTeq | isTne | isTge | isTgeu | isTlt | isTltu |
       isTeqi | isTnei | isTgei | isTgeiu | isTlti | isTltiu |
-      isMovn | isMovz
+      isMovn | isMovz |
+      isClo | isClz
   )
   copUnusable := (isMfc0 || isMtc0) && !rd.asUInt.mux(
     U(0, 5 bits) -> (cp0Select === U(0, 3 bits)),
