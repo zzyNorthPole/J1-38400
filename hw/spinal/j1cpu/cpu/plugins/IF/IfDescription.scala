@@ -10,8 +10,9 @@ import spinal.lib._
 
 class IfDescription(config: J1cpuConfig) extends Plugin[J1cpu] {
   val pcManager = new PcManager()
-  val iCache = new ICache(config.cacheConfig, config.axiConfig, config.sim)
+  val iCache = new ICache(config.iCacheConfig, config.axiConfig, config.sim)
   val iMmu = new Mmu(config.tlbConfig)
+  val bpu = new Bpu(config.bpuConfig, config.sim)
   override def build(pipeline: J1cpu): Unit = {
     import pipeline._
     import pipeline.signal._
@@ -66,13 +67,17 @@ class IfDescription(config: J1cpuConfig) extends Plugin[J1cpu] {
       insert(EX_BAD_TLB_REQUEST).VPN := iMmu.io.tlb.VPN
       insert(EX_BAD_TLB_REQUEST).ASID := service[MemDescription].cp0.io.tlbpDout.ASID
 
+      bpu.io.predict.isStalled := pipelineSignal.isStalled
+      bpu.io.predict.pc := curPc
+      bpu.io.predict.en := pipelineSignal.isValid && !pipelineSignal.isStalled
+
       iCache.io.fetch.flush := pipelineSignal.isFlushed
       iCache.io.fetch.exception := pipelineSignal.isValid && input(EX_EN)
       iCache.io.fetch.en := pipelineSignal.isValid && !pipelineSignal.isStalled
       iCache.io.fetch.we := B(0, 4 bits)
       iCache.io.fetch.addr := iMmu.io.phyAddr
       iCache.io.fetch.cached := iMmu.io.cached
-      iCache.io.fetch.correctTag := iMmu.io.phyAddr(31 downto 32 - config.cacheConfig.tagWidth)
+      iCache.io.fetch.correctTag := iMmu.io.phyAddr(31 downto 32 - config.iCacheConfig.tagWidth)
     }
 
     IF2 plug new Area {
@@ -80,9 +85,12 @@ class IfDescription(config: J1cpuConfig) extends Plugin[J1cpu] {
       pipelineSignal.flush := False
       pipelineSignal.stall := iCache.io.fetch.isStalled
 
-      // temp set branch predict ports low
-      pcManager.io.isBranchPredict := pipelineSignal.isValid && !pipelineSignal.isStalled && False
-      pcManager.io.branchPredictAddr := U(0, 32 bits)
+      bpu.io.predict.exception := input(EX_EN)
+      pcManager.io.isBranchPredict := pipelineSignal.isValid && !pipelineSignal.isStalled && bpu.io.predict.isBranchPredict
+      pcManager.io.branchPredictAddr := bpu.io.predict.branchPredictAddr
+      insert(PREDICT_PC) := bpu.io.predict.branchPredictAddr
+      insert(BPU_HIT) := bpu.io.predict.hit
+      insert(BHR) := bpu.io.predict.branchHistoryRegister
 
       val instReg = RegInit(U(0, 32 bits))
       val instRegValid = RegInit(False)
