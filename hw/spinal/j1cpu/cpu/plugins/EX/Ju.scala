@@ -11,9 +11,16 @@ class Ju extends Component {
     val pc = in UInt(32 bits)
     val offset = in UInt(32 bits)
     val predictPc = in UInt(32 bits)
+    val jumpPc = out UInt(32 bits)
     val link = out UInt(32 bits)
     val correctPc = out UInt(32 bits)
     val flush = out Bool()
+
+    val bhr = new Bundle {
+      val en = in Bool()
+      val din = in UInt(2 bits)
+      val dout = out UInt(2 bits)
+    }
   }
   noIoPrefix()
   import io._
@@ -32,7 +39,6 @@ class Ju extends Component {
     default -> True
   )
 
-  val jumpPc = UInt(32 bits)
   jumpPc := juOp.mux(
     JR -> din1.asUInt,
     JALR -> din1.asUInt,
@@ -45,4 +51,26 @@ class Ju extends Component {
   correctPc := result ? jumpPc | link
 
   flush := en && (correctPc =/= predictPc)
+
+  bhr.dout := en ? (correctPc === predictPc).mux(
+    False -> (
+      bhr.din.mux(
+        U(0, 2 bits) -> U(1, 2 bits),
+        U(1, 2 bits) -> U(2, 2 bits),
+        U(2, 2 bits) -> U(1, 2 bits),
+        U(3, 2 bits) -> U(2, 2 bits)
+      )
+    ),
+    True -> (
+      bhr.din.mux(
+        U(0, 2 bits) -> U(0, 2 bits),
+        U(1, 2 bits) -> U(0, 2 bits),
+        U(2, 2 bits) -> U(3, 2 bits),
+        U(3, 2 bits) -> U(3, 2 bits)
+      )
+    )
+  ) | (correctPc === predictPc).mux(
+    False -> U(1, 2 bits),
+    True -> U(0, 2 bits)
+  )
 }

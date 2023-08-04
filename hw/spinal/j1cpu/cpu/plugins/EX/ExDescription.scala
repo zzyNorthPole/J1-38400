@@ -42,6 +42,12 @@ class ExDescription extends Plugin[J1cpu] {
       ju.io.offset := input(JU_OFFSET)
       ju.io.predictPc := input(PREDICT_PC)
       insert(JU_LINK) := ju.io.link
+      service[IfDescription].bpu.io.calibrate.en := pipelineSignal.isValid && input(JU_EN)
+      service[IfDescription].bpu.io.calibrate.pc := input(PC)
+      service[IfDescription].bpu.io.calibrate.branchTarget := ju.io.jumpPc
+      ju.io.bhr.en := input(BPU_HIT)
+      ju.io.bhr.din := input(BHR)
+      service[IfDescription].bpu.io.calibrate.branchHistoryRegister := ju.io.bhr.dout
       // using for delay slot
       when(ID.pipelineSignal.isValid) {
         IF2.pipelineSignal.flush := ju.io.flush
