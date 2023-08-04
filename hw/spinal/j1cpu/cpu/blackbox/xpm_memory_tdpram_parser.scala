@@ -56,6 +56,7 @@ class xpm_memory_tdpram_parser(depth: Int, width: Int, use4Data: Int) extends Co
   mem.io.dinb := dinb
   readAnsb := mem.io.doutb
 
+  // forbidden write in the same time
   when(enaReg) {
     when(enbReg && webReg.orR && addrbReg === addraReg) {
       if (use4Data == 1) {
@@ -73,7 +74,20 @@ class xpm_memory_tdpram_parser(depth: Int, width: Int, use4Data: Int) extends Co
         douta := dinbReg
       }
     }.otherwise {
-      douta := readAnsa
+      if (use4Data == 1) {
+        val tmp = UInt(width bits)
+        for (i <- 0 until width / 8) {
+          val curRange = ((i + 1) * 8 - 1) downto (i * 8)
+          tmp(curRange) := weaReg(i).mux(
+            False -> readAnsa(curRange),
+            True -> dinaReg(curRange)
+          )
+        }
+        douta := tmp
+      }
+      else {
+        douta := weaReg.orR ? dinaReg | readAnsa
+      }
     }
   }.otherwise {
     douta := U(0, width bits)
@@ -95,7 +109,20 @@ class xpm_memory_tdpram_parser(depth: Int, width: Int, use4Data: Int) extends Co
         doutb := dinaReg
       }
     }.otherwise {
-      doutb := readAnsb
+      if (use4Data == 1) {
+        val tmp = UInt(width bits)
+        for (i <- 0 until width / 8) {
+          val curRange = ((i + 1) * 8 - 1) downto (i * 8)
+          tmp(curRange) := webReg(i).mux(
+            False -> readAnsb(curRange),
+            True -> dinbReg(curRange)
+          )
+        }
+        doutb := tmp
+      }
+      else {
+        doutb := webReg.orR ? dinbReg | readAnsb
+      }
     }
   }.otherwise {
     doutb := U(0, width bits)

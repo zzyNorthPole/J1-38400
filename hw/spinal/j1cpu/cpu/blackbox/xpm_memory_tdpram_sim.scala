@@ -61,6 +61,7 @@ class xpm_memory_tdpram_sim(depth: Int, width: Int, use4Data: Int) extends Compo
     mask = web
   )
 
+  // forbidden write in the same time
   when(enaReg) {
     when(enbReg && webReg.orR && addrbReg === addraReg) {
       if (use4Data == 1) {
@@ -78,7 +79,20 @@ class xpm_memory_tdpram_sim(depth: Int, width: Int, use4Data: Int) extends Compo
         douta := dinbReg
       }
     }.otherwise {
-      douta := readAnsa
+      if (use4Data == 1) {
+        val tmp = UInt(width bits)
+        for (i <- 0 until width / 8) {
+          val curRange = ((i + 1) * 8 - 1) downto (i * 8)
+          tmp(curRange) := weaReg(i).mux(
+            False -> readAnsa(curRange),
+            True -> dinaReg(curRange)
+          )
+        }
+        douta := tmp
+      }
+      else {
+        douta := weaReg.orR ? dinaReg | readAnsa
+      }
     }
   }.otherwise {
     douta := U(0, width bits)
@@ -100,7 +114,20 @@ class xpm_memory_tdpram_sim(depth: Int, width: Int, use4Data: Int) extends Compo
         doutb := dinaReg
       }
     }.otherwise {
-      doutb := readAnsb
+      if (use4Data == 1) {
+        val tmp = UInt(width bits)
+        for (i <- 0 until width / 8) {
+          val curRange = ((i + 1) * 8 - 1) downto (i * 8)
+          tmp(curRange) := webReg(i).mux(
+            False -> readAnsb(curRange),
+            True -> dinbReg(curRange)
+          )
+        }
+        doutb := tmp
+      }
+      else {
+        doutb := webReg.orR ? dinbReg | readAnsb
+      }
     }
   }.otherwise {
     doutb := U(0, width bits)
@@ -113,6 +140,6 @@ object xpm_memory_tdpramGen {
       targetDirectory = "hw/gen",
       defaultConfigForClockDomains = J1cpuConfig().clockConfig
     )
-    spinalConfig.generateVerilog(new xpm_memory_tdpram_sim(256, 32, 0))
+    spinalConfig.generateVerilog(new xpm_memory_tdpram_sim(256, 32, 1))
   }
 }
