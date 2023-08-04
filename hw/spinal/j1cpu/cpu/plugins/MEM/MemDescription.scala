@@ -11,7 +11,7 @@ import spinal.lib._
 
 class MemDescription(config: J1cpuConfig) extends Plugin[J1cpu] {
   val cp0 = new Cp0(config)
-  val dCache = new DCache(config.cacheConfig, config.axiConfig, config.sim)
+  val dCache = new DCache(config.dCacheConfig, config.axiConfig, config.sim)
   val dMmu = new Mmu(config.tlbConfig)
   val dgu = new Dgu()
   val tlb = new TLB(config.tlbConfig)
@@ -85,12 +85,13 @@ class MemDescription(config: J1cpuConfig) extends Plugin[J1cpu] {
       dCache.io.flush := pipelineSignal.isFlushed
       dCache.io.exception := output(EX_EN)
       dCache.io.en := pipelineSignal.isValid && !pipelineSignal.isStalled && input(MEM_EN) && !input(ICACHE_OP_EN)
+      dCache.io.op := input(MEM_OP)
       dCache.io.we := input(MEM_WE)
       dCache.io.addr := dMmu.io.phyAddr
       dCache.io.din := input(MEM_DIN)
 
       dCache.io.cached := dMmu.io.cached
-      dCache.io.correctTag := dMmu.io.phyAddr(31 downto 32 - config.cacheConfig.tagWidth)
+      dCache.io.correctTag := dMmu.io.phyAddr(31 downto 32 - config.dCacheConfig.tagWidth)
 
       dCache.io.cacheOpEn := input(DCACHE_OP_EN)
       dCache.io.cacheOp := input(CACHE_OP)
@@ -100,7 +101,7 @@ class MemDescription(config: J1cpuConfig) extends Plugin[J1cpu] {
       service[IfDescription].iCache.io.cacheOp.en := pipelineSignal.isValid && !pipelineSignal.isStalled && input(ICACHE_OP_EN)
       service[IfDescription].iCache.io.cacheOp.cacheOp := input(CACHE_OP)
       service[IfDescription].iCache.io.cacheOp.addr := dMmu.io.phyAddr
-      service[IfDescription].iCache.io.cacheOp.correctTag := dMmu.io.phyAddr(31 downto 32 - config.cacheConfig.tagWidth)
+      service[IfDescription].iCache.io.cacheOp.correctTag := dMmu.io.phyAddr(31 downto 32 - config.dCacheConfig.tagWidth)
 
       val dRefill = dMmu.io.tlbException.refill
       val dInvalid = dMmu.io.tlbException.invalid
@@ -121,7 +122,7 @@ class MemDescription(config: J1cpuConfig) extends Plugin[J1cpu] {
         )
       )
       output(EX_TLB_HIT) := input(EX_EN) ? input(EX_TLB_HIT) | (output(EX_EN) && dInvalid)
-      cp0.io.ex := pipelineSignal.isValid && !pipelineSignal.isStalled && output(EX_EN)
+      cp0.io.ex := pipelineSignal.isValid && !pipelineSignal.isStalled && output(EX_EN) && !input(ERET)
       cp0.io.exOp := output(EX_OP)
       cp0.io.tlbHit := output(EX_TLB_HIT)
       cp0.io.badPc := input(PC)
@@ -131,13 +132,13 @@ class MemDescription(config: J1cpuConfig) extends Plugin[J1cpu] {
       output(EX_BAD_TLB_REQUEST).VPN := input(EX_EN) ? input(EX_BAD_TLB_REQUEST).VPN | dMmu.io.tlb.VPN
       output(EX_BAD_TLB_REQUEST).ASID := input(EX_EN) ? input(EX_BAD_TLB_REQUEST).ASID | cp0.io.tlbpDout.ASID
       cp0.io.badTLBRequest := output(EX_BAD_TLB_REQUEST)
-      service[IfDescription].pcManager.io.isExceptionFlushed := (pipelineSignal.isValid && !pipelineSignal.isStalled && (output(EX_EN) || input(ERET)))
+      service[IfDescription].pcManager.io.isExceptionFlushed := (pipelineSignal.isValid && !pipelineSignal.isStalled && cp0.io.trap)
       service[IfDescription].pcManager.io.exceptionTrapAddr := cp0.io.trapPc
       service[IfDescription].pcManager.io.isTLBFlushed := pipelineSignal.isValid && !pipelineSignal.isStalled && input(TLB_OP_EN) && (input(TLB_OP) =/= TlbOp.TLBP)
       service[IfDescription].pcManager.io.tlbInstructionNextAddr := input(DELAY_SLOT) ? input(DELAY_SLOT_NEXT_PC) | (input(PC) + 4)
       EX.pipelineSignal.flush := pipelineSignal.isValid && !pipelineSignal.isStalled && (output(EX_EN) || input(ERET) || (input(TLB_OP_EN) && (input(TLB_OP) =/= TlbOp.TLBP)))
 
-      cp0.io.eret := pipelineSignal.isValid && !pipelineSignal.isStalled && !output(EX_EN) && input(ERET)
+      cp0.io.eret := pipelineSignal.isValid && !pipelineSignal.isStalled && input(ERET)
 
       cp0.io.en := pipelineSignal.isValid && !pipelineSignal.isStalled && input(CP0_W)
       cp0.io.addr := input(CP0_REG)
