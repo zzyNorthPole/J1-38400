@@ -176,6 +176,7 @@ class Decoder extends Component {
       isAddi || isAddiu || isSlti || isSltiu || isAndi || isOri || isXori ||
       isLb || isLh || isLwl || isLw || isLbu || isLhu || isLwr ||
       isSb || isSh || isSwl || isSw || isSwr ||
+      isCache ||
       isClo || isClz ||
       isMult || isMultu || isMul || isDiv || isDivu ||
       isMadd || isMaddu || isMsub || isMsubu ||
@@ -323,7 +324,7 @@ class Decoder extends Component {
   )
 
   memEn := isLb || isLh || isLwl || isLw || isLbu || isLhu || isLwr ||
-    isSb || isSh || isSwl || isSw || isSwr
+    isSb || isSh || isSwl || isSw || isSwr || isCache
 
   memW := isSb | isSh | isSwl | isSw | isSwr
 
@@ -536,24 +537,5 @@ class Decoder extends Component {
       isMovn | isMovz |
       isClo | isClz
   )
-  copUnusable := (isMfc0 || isMtc0) && !rd.asUInt.mux(
-    U(0, 5 bits) -> (cp0Select === U(0, 3 bits)),
-    U(1, 5 bits) -> (cp0Select === U(0, 3 bits)),
-    U(2, 5 bits) -> (cp0Select === U(0, 3 bits)),
-    U(3, 5 bits) -> (cp0Select === U(0, 3 bits)),
-    U(4, 5 bits) -> (cp0Select === U(0, 3 bits)),
-    U(5, 5 bits) -> (cp0Select === U(0, 3 bits)),
-    U(6, 5 bits) -> (cp0Select === U(0, 3 bits)),
-    U(8, 5 bits) -> (cp0Select === U(0, 3 bits)),
-    U(9, 5 bits) -> (cp0Select === U(0, 3 bits)),
-    U(10, 5 bits) -> (cp0Select === U(0, 3 bits)),
-    U(11, 5 bits) -> (cp0Select === U(0, 3 bits)),
-    U(12, 5 bits) -> (cp0Select === U(0, 3 bits)),
-    U(13, 5 bits) -> (cp0Select === U(0, 3 bits)),
-    U(14, 5 bits) -> (cp0Select === U(0, 3 bits)),
-    U(15, 5 bits) -> (cp0Select === U(0, 3 bits) || cp0Select === U(1, 3 bits)),
-    U(16, 5 bits) -> (cp0Select === U(0, 3 bits) || cp0Select === U(1, 3 bits)),
-    U(30, 5 bits) -> (cp0Select === U(0, 3 bits)),
-    default -> False
-  )
+  copUnusable := False
 }

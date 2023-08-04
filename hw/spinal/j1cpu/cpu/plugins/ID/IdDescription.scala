@@ -46,8 +46,7 @@ class IdDescription(config: J1cpuConfig) extends Plugin[J1cpu] {
       insert(JU_DIN1) := (decoder.io.rPorts.en(0) ? byPassNetwork.io.tDout(0) | decoder.io.immediate).asSInt
       insert(JU_DIN2) := (decoder.io.rPorts.en(1) ? byPassNetwork.io.tDout(1) | decoder.io.immediate).asSInt
       insert(JU_OFFSET) := decoder.io.immediate
-      // temporary set never jump as predict pc
-      insert(PREDICT_PC) := input(PC) + 8
+
       val delaySlot = RegInit(False)
       when(pipelineSignal.isFlushed) {
         delaySlot := False
