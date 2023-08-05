@@ -8,6 +8,7 @@ import spinal.lib.MuxOH
 class Mmu(config: TlbConfig) extends Component {
   val io = new Bundle {
     val en = in Bool()
+    val w = in Bool()
     val virtAddr = in UInt (32 bits)
     val phyAddr = out UInt (32 bits)
     val k0Cached = in Bool()
@@ -95,7 +96,7 @@ class Mmu(config: TlbConfig) extends Component {
       if (config.use) (tlb.hit && !tlb.din.V) else False
     )
   )
-  tlbException.modified := en && MuxOH(
+  tlbException.modified := en && w && MuxOH(
     Vec(
       unmapped,
       unmappedUncached,
