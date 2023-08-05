@@ -17,10 +17,11 @@ class Cp0(config: J1cpuConfig) extends Component {
     val delaySlot = in Bool()
     val badAddr = in UInt (32 bits)
     val badTLBRequest = in(new TLBRequest)
+    val trap = out Bool()
     val trapPc = out UInt (32 bits)
 
     // interrupt
-    val extInt = in Bits(6 bits)
+    val extInt = in Bits(5 bits)
     val interrupt = out Bool()
 
     // eret
@@ -139,7 +140,7 @@ class Cp0(config: J1cpuConfig) extends Component {
 
   // cp0 reg 12, select 0
   val Status = new Bundle {
-    val CU = RegInit(U(0, 4 bits))
+    val CU = RegInit(U(0, 1 bits))
     val BEV = RegInit(U(1, 1 bits))
     val IM = RegInit(U(0, 8 bits))
     val UM = RegInit(U(0, 1 bits))
@@ -149,7 +150,7 @@ class Cp0(config: J1cpuConfig) extends Component {
   }
   val status = UInt(32 bits)
   status :=
-    Status.CU @@ U(0, 5 bits) @@ Status.BEV @@ U(0, 6 bits) @@ Status.IM @@
+    U(0, 3 bits) @@ Status.CU @@ U(0, 5 bits) @@ Status.BEV @@ U(0, 6 bits) @@ Status.IM @@
       U(0, 3 bits) @@ Status.UM @@ U(0, 1 bits) @@ Status.ERL @@ Status.EXL @@ Status.IE
 
   // cp0 reg 13, select 0
@@ -172,14 +173,14 @@ class Cp0(config: J1cpuConfig) extends Component {
 
   // cp0 reg 15, select 0
   val PRId = new Bundle {
-    val PRId = U"32'h00007000"
+    val PRId = U"32'h00018003"
   }
   val prid = UInt(32 bits)
   prid := PRId.PRId
 
   // cp0 reg 15, select 1
   val EBase = new Bundle {
-    val EBase = U"32'h80000000"
+    val EBase = RegInit(U"32'h80000000")
   }
   val eBase = UInt(32 bits)
   eBase := EBase.EBase
@@ -202,12 +203,12 @@ class Cp0(config: J1cpuConfig) extends Component {
   val Config1 = new Bundle {
     val M = U(0, 1 bits) // 0 denotes config 2 register is not implemented
     val MMUSize = U(config.tlbConfig.lines - 1, 6 bits) // number of entries in the tlb
-    val IS = U(log2Up(config.cacheConfig.lines) - 6, 3 bits) // icache sets per way: 0-64
-    val IL = U(log2Up(config.cacheConfig.blockSize) - 1, 3 bits) // icache line size: 1-4 bytes
-    val IA = U(config.cacheConfig.ways - 1, 3 bits) // icache associativity: 1-2 way
-    val DS = U(log2Up(config.cacheConfig.lines) - 6, 3 bits) // dcache sets per way: 0-64
-    val DL = U(log2Up(config.cacheConfig.blockSize) - 1, 3 bits) // dcache line size: 1-4 bytes
-    val DA = U(config.cacheConfig.ways - 1, 3 bits) // dcache associativity: 1-2 way
+    val IS = U(log2Up(config.iCacheConfig.lines) - 6, 3 bits) // icache sets per way: 0-64
+    val IL = U(log2Up(config.iCacheConfig.blockSize) - 1, 3 bits) // icache line size: 1-4 bytes
+    val IA = U(config.iCacheConfig.ways - 1, 3 bits) // icache associativity: 1-2 way
+    val DS = U(log2Up(config.dCacheConfig.lines) - 6, 3 bits) // dcache sets per way: 0-64
+    val DL = U(log2Up(config.dCacheConfig.blockSize) - 1, 3 bits) // dcache line size: 1-4 bytes
+    val DA = U(config.dCacheConfig.ways - 1, 3 bits) // dcache associativity: 1-2 way
     val C2 = U(0, 1 bits) // no coprocessor 2 implemented
     val MD = U(0, 1 bits)
     val PC = U(0, 1 bits) // no performance counter registers implemented
@@ -231,8 +232,10 @@ class Cp0(config: J1cpuConfig) extends Component {
 
   // cp0 reg 0, select 0
   when(tlbp) {
-    Index.P := tlbpHit.asUInt
-    Index.Index := tlbpDin
+    Index.P := (!tlbpHit).asUInt
+    when(tlbpHit) {
+      Index.Index := tlbpDin
+    }
   }.elsewhen(en && addr === Cp0Reg.Index) {
     Index.Index := din(log2Up(config.tlbConfig.lines) - 1 downto 0)
   }
@@ -248,7 +251,7 @@ class Cp0(config: J1cpuConfig) extends Component {
   when(en && addr === Cp0Reg.Wired) {
     Random.Random := din(log2Up(config.tlbConfig.lines) - 1 downto 0)
   }.otherwise {
-    when(Random.Random === U(log2Up(config.tlbConfig.lines) bits, default -> True)) {
+    when(Random.Random === U(config.tlbConfig.lines - 1, log2Up(config.tlbConfig.lines) bits)) {
       Random.Random := Wired.Wired
     }.otherwise {
       Random.Random := Random.Random + (U(0, log2Up(config.tlbConfig.lines) - 1 bits) @@ lfsrDout(1))
@@ -345,16 +348,16 @@ class Cp0(config: J1cpuConfig) extends Component {
   }
 
   // cp0 reg 12, select 0
-  when(ex) {
-    Status.EXL := 1
-  }.elsewhen(eret) {
+  when(eret) {
     when(Status.ERL === U(1, 1 bits)) {
       Status.ERL := 0
     }.otherwise {
       Status.EXL := 0
     }
+  }.elsewhen(ex) {
+    Status.EXL := 1
   }.elsewhen(en && addr === Cp0Reg.Status) {
-    Status.CU := din(31 downto 28)
+    Status.CU(0) := din(28)
     Status.BEV := din(22 downto 22)
     Status.IM := din(15 downto 8)
     Status.UM := din(4 downto 4)
@@ -367,8 +370,11 @@ class Cp0(config: J1cpuConfig) extends Component {
   when(ex && Status.EXL === U"1'b0") {
     Cause.BD := delaySlot.asUInt
   }
-  Cause.IP(7) := extInt(5) | (count === compare)
-  Cause.IP(6 downto 2) := extInt(4 downto 0).asUInt
+  Cause.IP(7) := Cause.IP(7) | (count === compare)
+  when(en && addr === Cp0Reg.Compare) {
+    Cause.IP(7) := False
+  }
+  Cause.IP(6 downto 2) := extInt.asUInt
   when(en && addr === Cp0Reg.Cause) {
     Cause.IV := din(23 downto 23)
     Cause.IP(1 downto 0) := din(9 downto 8)
@@ -384,6 +390,11 @@ class Cp0(config: J1cpuConfig) extends Component {
     EPC.EPC := din
   }
 
+  // cp0 reg 15, select 1
+  when(en && addr === Cp0Reg.PRIdEBase && select === U(1, 3 bits)) {
+    EBase.EBase := U"32'h80000000" | (din & U"32'h3ffff000")
+  }
+
   // cp0 reg 16, select 0
   when(en && addr === Cp0Reg.Config && select === U(0, 3 bits)) {
     Config0.K0 := din(2 downto 0)
@@ -395,8 +406,9 @@ class Cp0(config: J1cpuConfig) extends Component {
     ErrorEPC.ErrorEPC := din
   }
 
-  val tlbRefillException = (exOp === Exception.TLBL || exOp === Exception.TLBS) && !tlbHit
-  val intException = (exOp === Exception.INT) && Cause.IV(0) && !Status.BEV(0)
+  trap := eret || ex
+  val tlbRefillException = (exOp === Exception.TLBL || exOp === Exception.TLBS) && !tlbHit && !Status.EXL(0)
+  val intException = (exOp === Exception.INT) && Cause.IV(0) && !Status.BEV(0) && !Status.EXL(0)
   trapPc := (
     eret ? (
       (Status.ERL === U(1, 1 bits)) ? errorEPC | epc
@@ -406,7 +418,7 @@ class Cp0(config: J1cpuConfig) extends Component {
           Vec(
             ex && tlbRefillException,
             ex && intException,
-            ex && ~tlbRefillException
+            ex && ~tlbRefillException && ~intException
           ),
           Vec(
             U(0, 32 bits),
