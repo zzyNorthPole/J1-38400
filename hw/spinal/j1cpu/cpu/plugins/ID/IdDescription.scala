@@ -88,15 +88,13 @@ class IdDescription(config: J1cpuConfig) extends Plugin[J1cpu] {
 
       insert(ERET) := decoder.io.eret
 
-      val interrupt = service[MemDescription].cp0.io.interrupt
       val syscall = decoder.io.syscall
       val break = decoder.io.break
       val reserveInst = decoder.io.reserveInst
       val copUnusable = decoder.io.copUnusable
-      output(EX_EN) := interrupt | input(EX_EN) | syscall | break | reserveInst | copUnusable
+      output(EX_EN) := input(EX_EN) | syscall | break | reserveInst | copUnusable
       output(EX_OP) := PriorityMux(
         Vec(
-          interrupt,
           input(EX_EN),
           syscall,
           break,
@@ -104,7 +102,6 @@ class IdDescription(config: J1cpuConfig) extends Plugin[J1cpu] {
           copUnusable
         ),
         Vec(
-          Exception.INT(),
           input(EX_OP),
           Exception.SYS(),
           Exception.BP(),

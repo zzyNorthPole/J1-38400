@@ -26,6 +26,7 @@ class MemDescription(config: J1cpuConfig) extends Plugin[J1cpu] {
       pipelineSignal.stall := False
 
       dMmu.io.en := pipelineSignal.isValid && input(MEM_EN)
+      dMmu.io.w := input(MEM_W)
       dMmu.io.virtAddr := input(MEM_ADDRESS)
       dMmu.io.k0Cached := cp0.io.k0Cached
       if (!config.tlbConfig.use) {
@@ -68,16 +69,16 @@ class MemDescription(config: J1cpuConfig) extends Plugin[J1cpu] {
         dMmu.io.tlb.hit := tlb.io.queryPorts(1).hit
 
         // tlb operation
-        cp0.io.tlbp := pipelineSignal.isValid && !pipelineSignal.isStalled && input(TLB_OP_EN) && (input(TLB_OP) === TlbOp.TLBP)
+        cp0.io.tlbp := pipelineSignal.isValid && !pipelineSignal.isStalled && input(TLB_OP_EN) && (input(TLB_OP) === TlbOp.TLBP) && !output(EX_EN)
         cp0.io.tlbpHit := tlb.io.queryPorts(1).hit
         cp0.io.tlbpDin := tlb.io.queryPorts(1).addr
 
-        cp0.io.tlbr := pipelineSignal.isValid && !pipelineSignal.isStalled && input(TLB_OP_EN) && (input(TLB_OP) === TlbOp.TLBR)
+        cp0.io.tlbr := pipelineSignal.isValid && !pipelineSignal.isStalled && input(TLB_OP_EN) && (input(TLB_OP) === TlbOp.TLBR) && !output(EX_EN)
         tlb.io.rPorts.addr := cp0.io.tlbrAddr
         cp0.io.tlbrDin := tlb.io.rPorts.dout
 
         cp0.io.tlbw := pipelineSignal.isValid && !pipelineSignal.isStalled && input(TLB_OP_EN) && (input(TLB_OP) === TlbOp.TLBWR)
-        tlb.io.wPorts.en := pipelineSignal.isValid && !pipelineSignal.isStalled && input(TLB_OP_EN) && (input(TLB_OP) === TlbOp.TLBWI || input(TLB_OP) === TlbOp.TLBWR)
+        tlb.io.wPorts.en := pipelineSignal.isValid && !pipelineSignal.isStalled && input(TLB_OP_EN) && (input(TLB_OP) === TlbOp.TLBWI || input(TLB_OP) === TlbOp.TLBWR) && !output(EX_EN)
         tlb.io.wPorts.addr := cp0.io.tlbwAddr
         tlb.io.wPorts.din := cp0.io.tlbwDout
       }
@@ -103,18 +104,21 @@ class MemDescription(config: J1cpuConfig) extends Plugin[J1cpu] {
       service[IfDescription].iCache.io.cacheOp.addr := dMmu.io.phyAddr
       service[IfDescription].iCache.io.cacheOp.correctTag := dMmu.io.phyAddr(31 downto 32 - config.dCacheConfig.tagWidth)
 
+      val interrupt = cp0.io.interrupt
       val dRefill = dMmu.io.tlbException.refill
       val dInvalid = dMmu.io.tlbException.invalid
       val dModified = dMmu.io.tlbException.modified
-      output(EX_EN) := input(EX_EN) | dRefill | dInvalid | dModified
+      output(EX_EN) := interrupt | input(EX_EN) | dRefill | dInvalid | dModified
       output(EX_OP) := PriorityMux(
         Vec(
+          interrupt,
           input(EX_EN),
           dRefill,
           dInvalid,
           dModified
         ),
         Vec(
+          Exception.INT(),
           input(EX_OP),
           input(MEM_W) ? Exception.TLBS() | Exception.TLBL(),
           input(MEM_W) ? Exception.TLBS() | Exception.TLBL(),
@@ -140,7 +144,7 @@ class MemDescription(config: J1cpuConfig) extends Plugin[J1cpu] {
 
       cp0.io.eret := pipelineSignal.isValid && !pipelineSignal.isStalled && input(ERET)
 
-      cp0.io.en := pipelineSignal.isValid && !pipelineSignal.isStalled && input(CP0_W)
+      cp0.io.en := pipelineSignal.isValid && !pipelineSignal.isStalled && input(CP0_W) && !output(EX_EN) && !input(ERET)
       cp0.io.addr := input(CP0_REG)
       cp0.io.select := input(CP0_SELECT)
       cp0.io.din := input(CP0_DIN)
