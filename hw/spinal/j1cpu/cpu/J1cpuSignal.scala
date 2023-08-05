@@ -38,8 +38,12 @@ class J1cpuSignal() {
   // EX to WB
   object MDU_RESULT extends Signal(UInt(32 bits))
   // Ju related
-  // ID to EX
+  // IF to EX
   object PREDICT_PC extends Signal(UInt(32 bits))
+  // IF to EX
+  object BPU_HIT extends Signal(Bool())
+  // IF to EX
+  object BHR extends Signal(UInt(2 bits))
   // ID to EX
   object JU_EN extends Signal(Bool())
   // ID to EX
@@ -65,7 +69,7 @@ class J1cpuSignal() {
   object MEM_W extends Signal(Bool())
   // ID to MEM
   object MEM_OP extends Signal(MemOp())
-  // ID to MEM
+  // EX to MEM
   object MEM_WE extends Signal(Bits(4 bits))
   // ID to MEM
   object MEM_DIN extends Signal(UInt(32 bits))
