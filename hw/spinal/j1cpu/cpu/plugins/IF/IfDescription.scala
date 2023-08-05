@@ -29,6 +29,7 @@ class IfDescription(config: J1cpuConfig) extends Plugin[J1cpu] {
       val iAdEL = pcManager.io.addressErrorLoad
 
       iMmu.io.en := pipelineSignal.isValid
+      iMmu.io.w := False
       iMmu.io.virtAddr := curPc
       iMmu.io.k0Cached := service[MemDescription].cp0.io.k0Cached
       if (!config.tlbConfig.use) {
