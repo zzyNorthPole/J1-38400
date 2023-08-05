@@ -15,7 +15,7 @@ class J1cpu(config: J1cpuConfig, val signal: J1cpuSignal) extends Component with
   type T = J1cpu
 
   val io = new Bundle {
-    val extInt = in Bits (6 bits)
+    val extInt = in Bits (5 bits)
     val iBus = master(Axi4ReadOnly(config.axiConfig))
     val dBus = master(Axi4(config.axiConfig))
     val udBus = master(Axi4(config.axiConfig))
