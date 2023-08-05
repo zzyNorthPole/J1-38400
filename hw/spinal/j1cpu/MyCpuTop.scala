@@ -1,6 +1,7 @@
 package j1cpu
 
 import j1cpu.axi.AxiCrossbar
+import j1cpu.cpu.plugins.MEM.MemDescription
 import j1cpu.cpu.plugins.WB.WbDescription
 import j1cpu.cpu.{J1cpu, J1cpuConfig, J1cpuSignal}
 import spinal.core._
@@ -13,7 +14,7 @@ class MyCpuTop extends Component {
     val aclk = in Bool()
     val aresetn = in Bool()
 
-    val ext_int = in Bits(6 bits)
+    val ext_int = in Bits(5 bits)
     val wid = out UInt(4 bits)
     val cpuBus = master(Axi4(J1cpuConfig().axiConfig))
     val arlock = out Bits(2 bits)
@@ -65,13 +66,13 @@ class MyCpuTop extends Component {
     val cpu = new J1cpu(J1cpuConfig(), new J1cpuSignal())
     val axiCrossbar = new AxiCrossbar(J1cpuConfig().axiConfig)
 
-    cpu.io.iBus.toAxi4() <> axiCrossbar.io.iBus
-    cpu.io.dBus <> axiCrossbar.io.dBus
-    cpu.io.udBus <> axiCrossbar.io.udBus
+    cpu.io.iBus.toAxi4() >> axiCrossbar.io.iBus
+    cpu.io.dBus >> axiCrossbar.io.dBus
+    cpu.io.udBus >> axiCrossbar.io.udBus
     arlock := B(0, 2 bits)
     awlock := B(0, 2 bits)
 
-    axiCrossbar.io.cpuBus <> cpuBus
+    axiCrossbar.io.cpuBus >> cpuBus
 
     cpu.io.extInt := ext_int
 
