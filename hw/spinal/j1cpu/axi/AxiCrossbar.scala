@@ -65,7 +65,7 @@ class AxiCrossbar(axiConfig: Axi4Config) extends Component {
       }
     }
   }
-  when(cpuBus.r.valid && cpuBus.r.last) {
+  when(cpuBus.r.fire && cpuBus.r.last) {
     rBusy := False
   }
 
