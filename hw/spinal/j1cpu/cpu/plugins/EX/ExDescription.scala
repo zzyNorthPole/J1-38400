@@ -3,6 +3,7 @@ package j1cpu.cpu.plugins.EX
 import j1cpu.cpu.J1cpu
 import j1cpu.cpu.plugins.ID.IdDescription
 import j1cpu.cpu.plugins.IF.IfDescription
+import j1cpu.cpu.plugins.MEM.MemDescription
 import j1cpu.cpu.signals.{Exception, WbSrc}
 import j1cpu.cpu.vexriscv.Plugin
 import spinal.core._
@@ -83,13 +84,15 @@ class ExDescription extends Plugin[J1cpu] {
       tu.io.din1 := input(TU_DIN1)
       tu.io.din2 := input(TU_DIN2)
 
+      val interrupt = service[MemDescription].cp0.io.interrupt
       val overflow = alu.io.overflow
       val dAdEL = agu.io.addressErrorLoad
       val dAdES = agu.io.addressErrorStore
       val trap = tu.io.trap
-      output(EX_EN) := input(EX_EN) || overflow || dAdEL || dAdES || trap
+      output(EX_EN) := interrupt || input(EX_EN) || overflow || dAdEL || dAdES || trap
       output(EX_OP) := PriorityMux(
         Vec(
+          interrupt,
           input(EX_EN),
           overflow,
           trap,
@@ -97,6 +100,7 @@ class ExDescription extends Plugin[J1cpu] {
           dAdES
         ),
         Vec(
+          Exception.INT(),
           input(EX_OP),
           Exception.OV(),
           Exception.TR(),

@@ -429,7 +429,14 @@ class Cp0(config: J1cpuConfig) extends Component {
     )
   )
 
-  interrupt := (Status.IE === U(1, 1 bits)) && (Status.EXL === U(0, 1 bits)) && (Status.ERL === U(0, 1 bits)) && ((Status.IM & Cause.IP).orR === True)
+  // binding interrupt to EX stage instruction in order to simplify logic of cp0 and avoid forwarding
+  val intStatus = UInt(32 bits)
+  intStatus := (en && addr === Cp0Reg.Status) ? din | status
+  // IM: 15 downto 8
+  // ERL: 2 downto 2
+  // EXL: 1 downto 1
+  // IE: 0 downto 0
+  interrupt := (intStatus(0 downto 0) === U(1, 1 bits)) && (intStatus(1 downto 1) === U(0, 1 bits)) && (intStatus(2 downto 2) === U(0, 1 bits)) && ((intStatus(15 downto 8) & Cause.IP).orR === True)
 
   dout := addr.mux(
     Cp0Reg.Index -> index,

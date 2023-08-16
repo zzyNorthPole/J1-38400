@@ -69,16 +69,16 @@ class MemDescription(config: J1cpuConfig) extends Plugin[J1cpu] {
         dMmu.io.tlb.hit := tlb.io.queryPorts(1).hit
 
         // tlb operation
-        cp0.io.tlbp := pipelineSignal.isValid && !pipelineSignal.isStalled && input(TLB_OP_EN) && (input(TLB_OP) === TlbOp.TLBP) && !output(EX_EN)
+        cp0.io.tlbp := pipelineSignal.isValid && !pipelineSignal.isStalled && input(TLB_OP_EN) && (input(TLB_OP) === TlbOp.TLBP) && !input(EX_EN)
         cp0.io.tlbpHit := tlb.io.queryPorts(1).hit
         cp0.io.tlbpDin := tlb.io.queryPorts(1).addr
 
-        cp0.io.tlbr := pipelineSignal.isValid && !pipelineSignal.isStalled && input(TLB_OP_EN) && (input(TLB_OP) === TlbOp.TLBR) && !output(EX_EN)
+        cp0.io.tlbr := pipelineSignal.isValid && !pipelineSignal.isStalled && input(TLB_OP_EN) && (input(TLB_OP) === TlbOp.TLBR) && !input(EX_EN)
         tlb.io.rPorts.addr := cp0.io.tlbrAddr
         cp0.io.tlbrDin := tlb.io.rPorts.dout
 
         cp0.io.tlbw := pipelineSignal.isValid && !pipelineSignal.isStalled && input(TLB_OP_EN) && (input(TLB_OP) === TlbOp.TLBWR)
-        tlb.io.wPorts.en := pipelineSignal.isValid && !pipelineSignal.isStalled && input(TLB_OP_EN) && (input(TLB_OP) === TlbOp.TLBWI || input(TLB_OP) === TlbOp.TLBWR) && !output(EX_EN)
+        tlb.io.wPorts.en := pipelineSignal.isValid && !pipelineSignal.isStalled && input(TLB_OP_EN) && (input(TLB_OP) === TlbOp.TLBWI || input(TLB_OP) === TlbOp.TLBWR) && !input(EX_EN)
         tlb.io.wPorts.addr := cp0.io.tlbwAddr
         tlb.io.wPorts.din := cp0.io.tlbwDout
       }
@@ -102,23 +102,20 @@ class MemDescription(config: J1cpuConfig) extends Plugin[J1cpu] {
       service[IfDescription].iCache.io.cacheOp.en := pipelineSignal.isValid && !pipelineSignal.isStalled && input(ICACHE_OP_EN)
       service[IfDescription].iCache.io.cacheOp.cacheOp := input(CACHE_OP)
       service[IfDescription].iCache.io.cacheOp.addr := dMmu.io.phyAddr
-      service[IfDescription].iCache.io.cacheOp.correctTag := dMmu.io.phyAddr(31 downto 32 - config.dCacheConfig.tagWidth)
+      service[IfDescription].iCache.io.cacheOp.correctTag := dMmu.io.phyAddr(31 downto 32 - config.iCacheConfig.tagWidth)
 
-      val interrupt = cp0.io.interrupt
       val dRefill = dMmu.io.tlbException.refill
       val dInvalid = dMmu.io.tlbException.invalid
       val dModified = dMmu.io.tlbException.modified
-      output(EX_EN) := interrupt | input(EX_EN) | dRefill | dInvalid | dModified
+      output(EX_EN) := input(EX_EN) | dRefill | dInvalid | dModified
       output(EX_OP) := PriorityMux(
         Vec(
-          interrupt,
           input(EX_EN),
           dRefill,
           dInvalid,
           dModified
         ),
         Vec(
-          Exception.INT(),
           input(EX_OP),
           input(MEM_W) ? Exception.TLBS() | Exception.TLBL(),
           input(MEM_W) ? Exception.TLBS() | Exception.TLBL(),

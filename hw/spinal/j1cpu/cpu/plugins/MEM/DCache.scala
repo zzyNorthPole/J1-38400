@@ -176,6 +176,67 @@ class DCache(cacheConfig: CacheConfig, axiConfig: Axi4Config, sim: Int) extends 
       }
     )
 
+    // invalid way select
+    // combination
+    val invalids = Vec(Bool(), cacheConfig.ways)
+    for (i <- 0 until cacheConfig.ways) {
+      invalids(i) := ~valids(i)
+    }
+    val invalid = invalids.orR
+    val invalidWay = MuxOH(
+      OHMasking.first(invalids),
+      for (i <- 0 until cacheConfig.ways) yield {
+        U(i, log2Up(cacheConfig.ways) bits)
+      }
+    )
+
+    // random replace way generation, sequential
+    val lfsrWidth = log2Up(cacheConfig.ways) + 2
+    val lfsr = new Lfsr(lfsrWidth)
+    lfsr.io.en := io.en & !io.isStalled
+    lfsr.io.seed := U((lfsrWidth - 1 downto 0) -> True)
+    // actually mem2.lfsrDout, put it here in order to avoid recursive definition
+    val lfsrDout = UInt(lfsrWidth bits)
+    lfsrDout := lfsr.io.dout
+
+    // index invalidate way of cache operation
+    val indexInvalidateWay = UInt(log2Up(cacheConfig.ways) bits)
+    indexInvalidateWay := correctTag(log2Up(cacheConfig.ways) - 1 downto 0)
+    // hit invalidate way of cache operation
+    val hitInvalidateWay = UInt(log2Up(cacheConfig.ways) bits)
+    hitInvalidateWay := hitWay
+    val invalidateWay = UInt(log2Up(cacheConfig.ways) bits)
+    invalidateWay := (cacheOp === CacheOp.indexInvalidateWriteBack) ? indexInvalidateWay | hitInvalidateWay
+
+    val replaceWay = cacheOpEn.mux(
+      False -> invalid.mux(
+        False -> lfsrDout(log2Up(cacheConfig.ways) - 1 downto 0),
+        True -> invalidWay
+      ),
+      True -> (cacheOp === CacheOp.indexInvalidateWriteBack).mux(
+        False -> hitInvalidateWay,
+        True -> indexInvalidateWay
+      )
+    )
+    val replaceWayTag = tags(replaceWay)
+
+    val readyArbitrate = Bool()
+    val readyArbitrateWait4Dirty = Bool()
+    readyArbitrate := cached && (
+      cacheOpEn ? (
+        cacheOp.mux(
+          CacheOp.indexInvalidateWriteBack -> !valids(invalidateWay),
+          CacheOp.hitInvalidateWriteBack -> !(hit && valids(invalidateWay)),
+          default -> True
+        )
+      ) | (
+        hit
+      )
+    )
+    readyArbitrateWait4Dirty := cached && cacheOpEn && (
+      cacheOp === CacheOp.indexInvalidateWriteBack || cacheOp === CacheOp.hitInvalidateWriteBack
+    )
+
     // actually mem2.dataLines, put it here in order to avoid recursive definition
     val dataLines = Vec(Vec(UInt(32 bits), cacheConfig.ways), cacheConfig.words)
     dataLines.setName("mem2").reflectNames()
@@ -193,15 +254,6 @@ class DCache(cacheConfig: CacheConfig, axiConfig: Axi4Config, sim: Int) extends 
       val curRam = dirtyRams(i)
       dirtys(i) := curRam.io.doutb.asBool
     }
-
-    // random replace way generation, sequential
-    val lfsrWidth = log2Up(cacheConfig.ways) + 2
-    val lfsr = new Lfsr(lfsrWidth)
-    lfsr.io.en := io.en & !io.isStalled
-    lfsr.io.seed := U((lfsrWidth - 1 downto 0) -> True)
-    // actually mem2.lfsrDout, put it here in order to avoid recursive definition
-    val lfsrDout = UInt(lfsrWidth bits)
-    lfsrDout := lfsr.io.dout
   }
   mem1.setName("mem1").reflectNames()
 
@@ -217,7 +269,6 @@ class DCache(cacheConfig: CacheConfig, axiConfig: Axi4Config, sim: Int) extends 
 
     val cached = RegInit(False)
 
-    val tags = Vec(RegInit(U(0, cacheConfig.tagWidth bits)), cacheConfig.ways)
     val correctTag = RegInit(U(0, cacheConfig.tagWidth bits))
 
     val valids = Vec(RegInit(False), cacheConfig.ways)
@@ -237,7 +288,6 @@ class DCache(cacheConfig: CacheConfig, axiConfig: Axi4Config, sim: Int) extends 
 
       cached := mem1.cached
 
-      tags := mem1.tags
       correctTag := mem1.correctTag
 
       valids := mem1.valids
@@ -254,6 +304,23 @@ class DCache(cacheConfig: CacheConfig, axiConfig: Axi4Config, sim: Int) extends 
       hitWay := mem1.hitWay
     }
 
+    val invalidateWayReg = RegInit(U(0, log2Up(cacheConfig.ways) bits))
+    when(!io.isStalled) {
+      invalidateWayReg := mem1.invalidateWay
+    }
+
+    val replaceWayReg = RegInit(U(0, log2Up(cacheConfig.ways) bits))
+    val replaceWayTagReg = RegInit(U(0, cacheConfig.tagWidth bits))
+    when(!io.isStalled) {
+      replaceWayReg := mem1.replaceWay
+      replaceWayTagReg := mem1.replaceWayTag
+    }
+    val replaceWayData = Vec(UInt(32 bits), cacheConfig.words)
+    val replaceWayDataReg = Vec(RegInit(U(0, 32 bits)), cacheConfig.words)
+    for (i <- 0 until cacheConfig.words) {
+      replaceWayData(i) := mem1.dataLines(i)(replaceWayReg)
+    }
+
     val data = Vec(UInt(32 bits), cacheConfig.ways)
     for (i <- 0 until cacheConfig.ways) {
       data(i) := mem1.dataLines(offset((cacheConfig.offsetWidth - 1) downto 2))(i)
@@ -264,46 +331,6 @@ class DCache(cacheConfig: CacheConfig, axiConfig: Axi4Config, sim: Int) extends 
       dirtys(i) := mem1.dirtys(i)
     }
 
-    // invalid way select
-    // combination
-    val invalids = Vec(Bool(), cacheConfig.ways)
-    for (i <- 0 until cacheConfig.ways) {
-      invalids(i) := ~valids(i)
-    }
-    val invalid = invalids.orR
-    val invalidWay = MuxOH(
-      OHMasking.first(invalids),
-      for (i <- 0 until cacheConfig.ways) yield {
-        U(i, log2Up(cacheConfig.ways) bits)
-      }
-    )
-
-    // index invalidate way of cache operation
-    val indexInvalidateWay = UInt (log2Up(cacheConfig.ways) bits)
-    indexInvalidateWay := correctTag(log2Up(cacheConfig.ways) - 1 downto 0)
-    // hit invalidate way of cache operation
-    val hitInvalidateWay = UInt (log2Up(cacheConfig.ways) bits)
-    hitInvalidateWay := hitWay
-
-    val replaceWay = cacheOpEn.mux(
-      False -> invalid.mux(
-        False -> mem1.lfsrDout(log2Up(cacheConfig.ways) - 1 downto 0),
-        True -> invalidWay
-      ),
-      True -> (cacheOp === CacheOp.indexInvalidateWriteBack).mux(
-        False -> hitInvalidateWay,
-        True -> indexInvalidateWay
-      )
-    )
-    val replaceWayReg = RegInit(U(0, log2Up(cacheConfig.ways) bits))
-    val replaceWayTag = tags(replaceWay)
-    val replaceWayTagReg = RegInit(U(0, cacheConfig.tagWidth bits))
-    val replaceWayData = Vec(UInt(32 bits), cacheConfig.words)
-    val replaceWayDataReg = Vec(RegInit(U(0, 32 bits)), cacheConfig.words)
-    for (i <- 0 until cacheConfig.words) {
-      replaceWayData(i) := mem1.dataLines(i)(replaceWay)
-    }
-
     // we use four state to describe data cache's operation when cache miss
     // idle state is the initial state, if current way hits, return load data from hit way or store data in hit way
     // writeBack state use when the cache line is dirty, we write back it to memory via axi
@@ -312,8 +339,8 @@ class DCache(cacheConfig: CacheConfig, axiConfig: Axi4Config, sim: Int) extends 
     // after that we back to idle state, return load data from replace way data or store data in replace way
     val reLife = RegInit(False)
     val count = RegInit(U(0, log2Up(cacheConfig.words) bits))
-    io.isStalled := True
-    io.ready := False
+//    io.isStalled := True
+//    io.ready := False
     io.dout := U(0, 32 bits)
     val dbusInit = new Area {
       import io.dbus._
@@ -433,23 +460,21 @@ class DCache(cacheConfig: CacheConfig, axiConfig: Axi4Config, sim: Int) extends 
       stateBoot.whenIsActive {
         when(cached && !cacheOpEn) {
           // combination
-          when(reLife) {
-            io.ready := True
-            io.isStalled := False
-          }.otherwise {
-            io.ready := en && hit
-            io.isStalled := en && !hit
-          }
+//          when(reLife) {
+//            io.ready := True
+//            io.isStalled := False
+//          }.otherwise {
+//            io.ready := en && hit
+//            io.isStalled := en && !hit
+//          }
 
           // sequential
           when(io.isStalled) {
             reLife := True
-            replaceWayReg := replaceWay
-            when(!valids(replaceWay) || !dirtys(replaceWay)) {
+            when(!valids(replaceWayReg) || !dirtys(replaceWayReg)) {
               readNewValid := True
               goto(readNew)
             }.otherwise {
-              replaceWayTagReg := replaceWayTag
               for (i <- 0 until cacheConfig.words) {
                 replaceWayDataReg(i) := replaceWayData(i)
               }
@@ -464,9 +489,6 @@ class DCache(cacheConfig: CacheConfig, axiConfig: Axi4Config, sim: Int) extends 
       }
 
       writeBack.whenIsActive {
-//        io.ready := False
-//        io.isStalled := True
-
         when(writeBackReady) {
           readNewValid := True
           goto(readNew)
@@ -474,18 +496,12 @@ class DCache(cacheConfig: CacheConfig, axiConfig: Axi4Config, sim: Int) extends 
       }
 
       readNew.whenIsActive {
-//        io.ready := False
-//        io.isStalled := True
-
         when(readNewReady) {
           goto(floodFill)
         }
       }
 
       floodFill.whenIsActive {
-//        io.ready := False
-//        io.isStalled := True
-
         floodFillValid := True
         hit := True
 
@@ -538,23 +554,21 @@ class DCache(cacheConfig: CacheConfig, axiConfig: Axi4Config, sim: Int) extends 
       stateBoot.whenIsActive {
         when(cached && cacheOpEn) {
           // combination
-          when(reLife) {
-            io.ready := True
-            io.isStalled := False
-          }.otherwise {
-            io.ready := cacheOp.mux(
-              indexInvalidateWriteBack -> (en && !(valids(indexInvalidateWay) && dirtys(indexInvalidateWay))),
-              hitInvalidateWriteBack -> (en && !(hit && valids(hitInvalidateWay) && dirtys(hitInvalidateWay))),
-              default -> en
-            )
-            io.isStalled := en && !io.ready
-          }
+//          when(reLife) {
+//            io.ready := True
+//            io.isStalled := False
+//          }.otherwise {
+//            io.ready := cacheOp.mux(
+//              indexInvalidateWriteBack -> (en && !(valids(invalidateWayReg) && dirtys(invalidateWayReg))),
+//              hitInvalidateWriteBack -> (en && !(hit && valids(invalidateWayReg) && dirtys(invalidateWayReg))),
+//              default -> en
+//            )
+//            io.isStalled := en && !io.ready
+//          }
 
           // sequential
           when(io.isStalled) {
             reLife := True
-            replaceWayReg := replaceWay
-            replaceWayTagReg := replaceWayTag
             for (i <- 0 until cacheConfig.words) {
               replaceWayDataReg(i) := replaceWayData(i)
             }
@@ -567,8 +581,6 @@ class DCache(cacheConfig: CacheConfig, axiConfig: Axi4Config, sim: Int) extends 
       }
 
       writeBack.whenIsActive {
-        io.ready := False
-        io.isStalled := True
         when(writeBackReady) {
           goto(stateBoot)
         }
@@ -577,9 +589,7 @@ class DCache(cacheConfig: CacheConfig, axiConfig: Axi4Config, sim: Int) extends 
 
     // TODO: load/store instrument operator and dirty fix
     val writeWay = reLife ? replaceWayReg | hitWay
-    val invalidateWay = reLife ? replaceWayReg | (
-      (cacheOp === CacheOp.indexInvalidateWriteBack) ? indexInvalidateWay | hitInvalidateWay
-    )
+    val invalidateWay = reLife ? replaceWayReg | invalidateWayReg
     val wPortsInit = new Area {
       for (i <- 0 until cacheConfig.ways) {
         val curRam = tagRams(i)
@@ -761,13 +771,13 @@ class DCache(cacheConfig: CacheConfig, axiConfig: Axi4Config, sim: Int) extends 
       stateBoot.whenIsActive {
         when(!cached) {
           // combination
-          when(reLife) {
-            io.ready := True
-            io.isStalled := False
-          }.otherwise {
-            io.ready := False
-            io.isStalled := en
-          }
+//          when(reLife) {
+//            io.ready := True
+//            io.isStalled := False
+//          }.otherwise {
+//            io.ready := False
+//            io.isStalled := en
+//          }
 
           // sequential
           when(io.isStalled) {
@@ -789,24 +799,35 @@ class DCache(cacheConfig: CacheConfig, axiConfig: Axi4Config, sim: Int) extends 
       }
 
       write.whenIsActive {
-//        io.ready := False
-//        io.isStalled := True
-
         when(dataUncachedWriteReady) {
           goto(stateBoot)
         }
       }
 
       read.whenIsActive {
-//        io.ready := False
-//        io.isStalled := True
-
         when(dataUnCachedReadReady) {
           goto(stateBoot)
         }
       }
     }
     dataUncachedFSM.reflectNames()
+
+    val readyArbitrate = RegInit(False)
+    val readyArbitrateWait4Dirty = RegInit(False)
+    when(!io.isStalled) {
+      readyArbitrate := mem1.readyArbitrate
+      readyArbitrateWait4Dirty := mem1.readyArbitrateWait4Dirty
+    }
+    io.ready := (
+      dataCachedFSM.isActive(dataCachedFSM.stateBoot) && dataCacheOpFSM.isActive(dataCacheOpFSM.stateBoot) && dataUncachedFSM.isActive(dataUncachedFSM.stateBoot)
+    ) && (
+      reLife || (
+        en && (
+          readyArbitrateWait4Dirty ? (readyArbitrate || !dirtys(invalidateWayReg)) | readyArbitrate
+        )
+      )
+    )
+    io.isStalled := en && !io.ready
   }
   mem2.setName("mem2").reflectNames()
 }
