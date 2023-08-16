@@ -15,7 +15,7 @@ class J1cpu(config: J1cpuConfig, val signal: J1cpuSignal) extends Component with
   type T = J1cpu
 
   val io = new Bundle {
-    val extInt = in Bits (5 bits)
+    val extInt = in Bits (6 bits)
     val iBus = master(Axi4ReadOnly(config.axiConfig))
     val dBus = master(Axi4(config.axiConfig))
     val udBus = master(Axi4(config.axiConfig))
@@ -33,7 +33,7 @@ class J1cpu(config: J1cpuConfig, val signal: J1cpuSignal) extends Component with
       signal => {
         val tmpName = signal.getName()
         val tmpList = tmpName.split("_")
-        signal.setName(tmpList(0) + "_" + tmpList(1) + "_" + tmpList(tmpList.size - 1))
+        signal.setName(tmpList(0) + "_" + tmpList(1) + tmpList(tmpList.size - 1))
       }
     }
   }
@@ -58,5 +58,5 @@ class J1cpu(config: J1cpuConfig, val signal: J1cpuSignal) extends Component with
 
   service[MemDescription].dCache.io.dbus <> dBus
   service[MemDescription].dCache.io.udbus <> udBus
-  service[MemDescription].cp0.io.extInt := io.extInt
+  service[MemDescription].cp0.io.extInt := io.extInt(4 downto 0)
 }
