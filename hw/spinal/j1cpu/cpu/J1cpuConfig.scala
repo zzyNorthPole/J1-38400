@@ -36,6 +36,13 @@ case class TlbConfig(
 
 }
 
+case class BpuConfig(
+  lines: Int
+                    ) {
+  val indexWidth = log2Up(lines)
+  val tagWidth = 32 - indexWidth - 2
+}
+
 case class J1cpuConfig() {
   val sim = 1
 
@@ -66,13 +73,26 @@ case class J1cpuConfig() {
     useLock = false
   )
 
-  val cacheConfig = CacheConfig(
+  // test for nscscc using lines * blocksize = 8192
+  // current both cache lines = 1 << 6 and block size = 1 << 7, tlb lines = 1 << 3, bpu lines = 1 << 10 perf best
+  val iCacheConfig = CacheConfig(
     ways = 2,
-    lines = 1 << 8,
-    blockSize = 16
+    lines = 1 << 7,
+    blockSize = 64
   )
+
+  val dCacheConfig = CacheConfig(
+    ways = 2,
+    lines = 1 << 7,
+    blockSize = 64
+  )
+
   val tlbConfig = TlbConfig(
     use = true,
     lines = 1 << 3
+  )
+
+  val bpuConfig = BpuConfig(
+    lines = 1 << 9
   )
 }
