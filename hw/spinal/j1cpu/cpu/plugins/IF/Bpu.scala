@@ -1,7 +1,8 @@
 package j1cpu.cpu.plugins.IF
 
 import j1cpu.cpu.BpuConfig
-import j1cpu.cpu.utils.{Bram}
+import j1cpu.cpu.signals.BpOp
+import j1cpu.cpu.utils.Bram
 import spinal.core._
 
 class Bpu(bpuConfig: BpuConfig, sim: Int) extends Component {
@@ -13,7 +14,10 @@ class Bpu(bpuConfig: BpuConfig, sim: Int) extends Component {
       val en = in Bool() // if1
       val pc = in UInt (32 bits) // if1
 
-      val hit = out Bool() // if2
+//      val hit = out Bool() // if2
+      val bpEn = in Bool()
+      val bpOp = in(BpOp())
+      val offset = in UInt (32 bits)
       val isBranchPredict = out Bool() // if2
       val branchPredictAddr = out UInt (32 bits) // if2
       val branchHistoryRegister = out UInt(2 bits) // if2
@@ -98,10 +102,29 @@ class Bpu(bpuConfig: BpuConfig, sim: Int) extends Component {
     val bhr = UInt(2 bits)
     bhr := bhrRams.io.doutb
 
-    io.predict.hit := hit
-    io.predict.isBranchPredict := hit && !io.predict.exception
-    io.predict.branchPredictAddr := hit ? (bhr(1) ? target | (pc + 8)) | (pc + 8)
-    io.predict.branchHistoryRegister := hit ? bhr | U"01"
+//    io.predict.hit := hit
+//    io.predict.isBranchPredict := hit && !io.predict.exception
+//    io.predict.branchPredictAddr := hit ? (bhr(1) ? target | (pc + 8)) | (pc + 8)
+//    io.predict.branchHistoryRegister := hit ? bhr | U"01"
+    io.predict.isBranchPredict := io.predict.bpEn && !io.predict.exception
+    io.predict.branchPredictAddr := io.predict.bpEn.mux(
+      True -> io.predict.bpOp.mux(
+        BpOp.B -> (hit ? (bhr(1) ? target | (pc + 8)) | (pc + 8)),
+        BpOp.R -> (hit ? (bhr(1) ? target | (pc + 8)) | (pc + 8)),
+        BpOp.J -> io.predict.offset,
+        default -> U(0, 32 bits)
+      ),
+      False -> (pc + 8)
+    )
+    io.predict.branchHistoryRegister := io.predict.bpEn.mux(
+      True -> io.predict.bpOp.mux(
+        BpOp.B -> (hit ? bhr | U"01"),
+        BpOp.R -> (hit ? bhr | U"01"),
+        BpOp.J -> U"11",
+        default -> U(0, 2 bits)
+      ),
+      False -> U"01"
+    )
   }
 
   val ex = new Area {

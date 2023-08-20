@@ -12,6 +12,7 @@ class IfDescription(config: J1cpuConfig) extends Plugin[J1cpu] {
   val pcManager = new PcManager()
   val iCache = new ICache(config.iCacheConfig, config.axiConfig, config.sim)
   val iMmu = new Mmu(config.tlbConfig)
+  val microDu = new MicroDu()
   val bpu = new Bpu(config.bpuConfig, config.sim)
   override def build(pipeline: J1cpu): Unit = {
     import pipeline._
@@ -90,7 +91,7 @@ class IfDescription(config: J1cpuConfig) extends Plugin[J1cpu] {
       pcManager.io.isBranchPredict := pipelineSignal.isValid && !pipelineSignal.isStalled && bpu.io.predict.isBranchPredict
       pcManager.io.branchPredictAddr := bpu.io.predict.branchPredictAddr
       insert(PREDICT_PC) := bpu.io.predict.branchPredictAddr
-      insert(BPU_HIT) := bpu.io.predict.hit
+//      insert(BPU_HIT) := bpu.io.predict.hit
       insert(BHR) := bpu.io.predict.branchHistoryRegister
 
       val instReg = RegInit(U(0, 32 bits))
@@ -103,6 +104,12 @@ class IfDescription(config: J1cpuConfig) extends Plugin[J1cpu] {
         instRegValid := False
       }
       insert(INST) := (instRegValid ? instReg | iCache.io.fetch.dout).asBits
+
+      microDu.io.inst := input(INST)
+      bpu.io.predict.bpEn := microDu.io.bpuEn
+      bpu.io.predict.bpOp := microDu.io.bpuOp
+      microDu.io.pc := input(PC)
+      bpu.io.predict.offset := microDu.io.offset
     }
   }
 }
