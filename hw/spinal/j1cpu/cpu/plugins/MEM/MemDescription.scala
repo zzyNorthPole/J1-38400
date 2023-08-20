@@ -11,7 +11,7 @@ import spinal.lib._
 
 class MemDescription(config: J1cpuConfig) extends Plugin[J1cpu] {
   val cp0 = new Cp0(config)
-  val dCache = new DCache(config.dCacheConfig, config.axiConfig, config.sim)
+  val dCache = new DCache(config.dCacheConfig, config.writeQueueConfig, config.axiConfig, config.sim)
   val dMmu = new Mmu(config.tlbConfig)
   val dgu = new Dgu()
   val tlb = new TLB(config.tlbConfig)

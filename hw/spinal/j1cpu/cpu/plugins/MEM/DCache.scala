@@ -3,13 +3,13 @@ package j1cpu.cpu.plugins.MEM
 import j1cpu.cpu.signals.{CacheOp, MemOp}
 import spinal.core._
 import spinal.lib._
-import spinal.lib.bus.amba4.axi.{Axi4, Axi4Config}
+import spinal.lib.bus.amba4.axi.{Axi4, Axi4Config, Axi4ReadOnly, Axi4WriteOnly}
 import spinal.lib.fsm.{State, StateMachine}
-import j1cpu.cpu.{CacheConfig, J1cpu, J1cpuConfig}
+import j1cpu.cpu.{CacheConfig, J1cpu, J1cpuConfig, WriteQueueConfig}
 import j1cpu.cpu.utils.{Bram, Dram, Lfsr}
 import j1cpu.cpu.vexriscv.Plugin
 
-class DCache(cacheConfig: CacheConfig, axiConfig: Axi4Config, sim: Int) extends Component {
+class DCache(cacheConfig: CacheConfig, writeQueueConfig: WriteQueueConfig, axiConfig: Axi4Config, sim: Int) extends Component {
   val io = new Bundle {
     // cpu
     val flush = in Bool() // mem1
@@ -40,7 +40,7 @@ class DCache(cacheConfig: CacheConfig, axiConfig: Axi4Config, sim: Int) extends 
 
     // axi
     val dbus = master(Axi4(axiConfig)).setIdle() // mem2
-    val udbus = master(Axi4(axiConfig)).setIdle() // mem2
+    val udbus = master(Axi4(axiConfig)) // mem2
   }
   noIoPrefix()
 
@@ -59,6 +59,13 @@ class DCache(cacheConfig: CacheConfig, axiConfig: Axi4Config, sim: Int) extends 
       signal.setName(tmpList(0) + "_" + tmpList(1) + "_" + tmpList(tmpList.size - 1))
     }
   }
+  val udbusW = Axi4WriteOnly(axiConfig)
+  val udbusR = Axi4ReadOnly(axiConfig).setIdle()
+  udbusR.ar >> io.udbus.ar
+  udbusR.r << io.udbus.r
+  udbusW.aw >> io.udbus.aw
+  udbusW.w >> io.udbus.w
+  udbusW.b << io.udbus.b
 
   val tagRams = Seq.fill(cacheConfig.ways) {
     new Dram(cacheConfig.lines, cacheConfig.tagWidth, 0, sim)
@@ -222,19 +229,28 @@ class DCache(cacheConfig: CacheConfig, axiConfig: Axi4Config, sim: Int) extends 
 
     val readyArbitrate = Bool()
     val readyArbitrateWait4Dirty = Bool()
-    readyArbitrate := cached && (
-      cacheOpEn ? (
-        cacheOp.mux(
-          CacheOp.indexInvalidateWriteBack -> !valids(invalidateWay),
-          CacheOp.hitInvalidateWriteBack -> !(hit && valids(invalidateWay)),
-          default -> True
+    readyArbitrate := (
+      cached && (
+        cacheOpEn ? (
+          cacheOp.mux(
+            CacheOp.indexInvalidateWriteBack -> !valids(invalidateWay),
+            CacheOp.hitInvalidateWriteBack -> !(hit && valids(invalidateWay)),
+            default -> True
+          )
+        ) | (
+          hit
         )
-      ) | (
-        hit
       )
+    ) || (
+      !cached && we.orR
     )
-    readyArbitrateWait4Dirty := cached && cacheOpEn && (
-      cacheOp === CacheOp.indexInvalidateWriteBack || cacheOp === CacheOp.hitInvalidateWriteBack
+
+    readyArbitrateWait4Dirty := (
+      cached && cacheOpEn && (
+        cacheOp === CacheOp.indexInvalidateWriteBack || cacheOp === CacheOp.hitInvalidateWriteBack
+        )
+    ) || (
+      !cached && we.orR
     )
 
     // actually mem2.dataLines, put it here in order to avoid recursive definition
@@ -640,28 +656,47 @@ class DCache(cacheConfig: CacheConfig, axiConfig: Axi4Config, sim: Int) extends 
     }
 
     val uncachedData = RegInit(U(0, 32 bits))
-    val udbusInit = new Area {
-      import io.udbus._
-      aw.addr := op.mux(
+    val writeQueue = new WriteQueue(writeQueueConfig, axiConfig)
+    val writeQueueInit = new Area {
+      writeQueue.io.en := !cached && io.ready && we.orR
+      writeQueue.io.din.addr := op.mux(
         MemOp.B -> addr,
         MemOp.H -> addr(31 downto 1) @@ U(0, 1 bits),
         default -> addr(31 downto 2) @@ U(0, 2 bits)
       ) // TODO maybe physical address error
-      aw.id := U(1, 4 bits);
-      aw.len := U(0, 8 bits)
-      aw.size := op.mux(
+      writeQueue.io.din.size := op.mux(
         MemOp.B -> U(0, 3 bits),
         MemOp.H -> U(1, 3 bits),
         default -> U(2, 3 bits)
       ) // 4 bytes each time
-      aw.burst := B(1, 2 bits) // INCR
-      // aw.lock := B(0, 2 bits)
-      aw.cache := B(0, 4 bits)
-      aw.prot := B(0, 3 bits)
-
-      w.data := din.asBits
-      w.strb := we
-      w.last := True
+      writeQueue.io.din.strb := we
+      writeQueue.io.din.data := din.asBits
+      writeQueue.io.udbus.aw >> udbusW.aw
+      writeQueue.io.udbus.w >> udbusW.w
+      writeQueue.io.udbus.b << udbusW.b
+    }
+    val udbusRInit = new Area {
+      import udbusR._
+//      aw.addr := op.mux(
+//        MemOp.B -> addr,
+//        MemOp.H -> addr(31 downto 1) @@ U(0, 1 bits),
+//        default -> addr(31 downto 2) @@ U(0, 2 bits)
+//      ) // TODO maybe physical address error
+//      aw.id := U(1, 4 bits);
+//      aw.len := U(0, 8 bits)
+//      aw.size := op.mux(
+//        MemOp.B -> U(0, 3 bits),
+//        MemOp.H -> U(1, 3 bits),
+//        default -> U(2, 3 bits)
+//      ) // 4 bytes each time
+//      aw.burst := B(1, 2 bits) // INCR
+//      // aw.lock := B(0, 2 bits)
+//      aw.cache := B(0, 4 bits)
+//      aw.prot := B(0, 3 bits)
+//
+//      w.data := din.asBits
+//      w.strb := we
+//      w.last := True
 
       ar.addr := op.mux(
         MemOp.B -> addr,
@@ -687,57 +722,87 @@ class DCache(cacheConfig: CacheConfig, axiConfig: Axi4Config, sim: Int) extends 
     val dataUncachedWriteValid = CombInit(False)
     val dataUncachedWriteReady = CombInit(False)
     val dataUncachedWriteFSM = new StateMachine {
-      import io.udbus._
-
       setEntry(stateBoot)
       disableAutoStart()
 
-      val writeAw = new State()
-      val writeW = new State()
-      val writeB = new State()
+      val waitForNonFull = new State()
 
       stateBoot.whenIsActive {
         when(dataUncachedWriteValid) {
-          goto(writeAw)
+          goto(waitForNonFull)
         }
       }
 
-      writeAw.whenIsActive {
-        aw.valid := True
-        when(aw.ready) {
-          count := U(0, log2Up(cacheConfig.words) bits)
-          goto(writeW)
-        }
-      }
-
-      writeW.whenIsActive {
-        w.valid := True
-        when(w.ready) {
-          goto(writeB)
-        }
-      }
-
-      writeB.whenIsActive {
-        b.ready := True
-        when(b.valid) {
+      waitForNonFull.whenIsActive {
+        when(!writeQueue.io.full) {
           dataUncachedWriteReady := True
           goto(stateBoot)
         }
       }
     }
+//    val dataUncachedWriteFSM = new StateMachine {
+//      import io.udbus._
+//
+//      setEntry(stateBoot)
+//      disableAutoStart()
+//
+//      val writeAw = new State()
+//      val writeW = new State()
+//      val writeB = new State()
+//
+//      stateBoot.whenIsActive {
+//        when(dataUncachedWriteValid) {
+//          goto(writeAw)
+//        }
+//      }
+//
+//      writeAw.whenIsActive {
+//        aw.valid := True
+//        when(aw.ready) {
+//          count := U(0, log2Up(cacheConfig.words) bits)
+//          goto(writeW)
+//        }
+//      }
+//
+//      writeW.whenIsActive {
+//        w.valid := True
+//        when(w.ready) {
+//          goto(writeB)
+//        }
+//      }
+//
+//      writeB.whenIsActive {
+//        b.ready := True
+//        when(b.valid) {
+//          dataUncachedWriteReady := True
+//          goto(stateBoot)
+//        }
+//      }
+//    }
     val dataUncachedReadValid = CombInit(False)
     val dataUnCachedReadReady = CombInit(False)
     val dataUncachedReadFSM = new StateMachine {
-      import io.udbus._
+      import udbusR._
 
       setEntry(stateBoot)
       disableAutoStart()
 
+      val waitForEmpty = new State()
       val readAr = new State()
       val readR = new State()
 
       stateBoot.whenIsActive {
         when(dataUncachedReadValid) {
+          when(!writeQueue.io.empty) {
+            goto(waitForEmpty)
+          }.otherwise {
+            goto(readAr)
+          }
+        }
+      }
+
+      waitForEmpty.whenIsActive {
+        when(writeQueue.io.empty) {
           goto(readAr)
         }
       }
@@ -823,7 +888,7 @@ class DCache(cacheConfig: CacheConfig, axiConfig: Axi4Config, sim: Int) extends 
     ) && (
       reLife || (
         en && (
-          readyArbitrateWait4Dirty ? (readyArbitrate || !dirtys(invalidateWayReg)) | readyArbitrate
+          readyArbitrateWait4Dirty ? (cached ? (readyArbitrate || !dirtys(invalidateWayReg)) | (readyArbitrateWait4Dirty && !writeQueue.io.full)) | readyArbitrate
         )
       )
     )
@@ -839,6 +904,6 @@ object DCacheGen {
       defaultConfigForClockDomains = new J1cpuConfig().clockConfig
     )
 
-    spinalConfig.generateVerilog(new DCache(CacheConfig(ways = 2, lines = 256, blockSize = 32), J1cpuConfig().axiConfig, 0))
+    spinalConfig.generateVerilog(new DCache(CacheConfig(ways = 2, lines = 256, blockSize = 32), WriteQueueConfig(lines = 32), J1cpuConfig().axiConfig, 0))
   }
 }
