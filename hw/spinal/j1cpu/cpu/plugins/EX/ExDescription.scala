@@ -27,7 +27,7 @@ class ExDescription extends Plugin[J1cpu] {
 
       val mdu = new Mdu()
       mdu.io.flush := pipelineSignal.isFlushed
-      mdu.io.en := pipelineSignal.isValid && input(MDU_EN)
+      mdu.io.en := pipelineSignal.isValid && !output(EX_EN) && input(MDU_EN)
       mdu.io.mduOp := input(MDU_OP)
       mdu.io.din1 := input(MDU_DIN1)
       mdu.io.din2 := input(MDU_DIN2)
@@ -46,7 +46,7 @@ class ExDescription extends Plugin[J1cpu] {
       service[IfDescription].bpu.io.calibrate.en := pipelineSignal.isValid && input(JU_EN)
       service[IfDescription].bpu.io.calibrate.pc := input(PC)
       service[IfDescription].bpu.io.calibrate.branchTarget := ju.io.jumpPc
-      ju.io.bhr.en := input(BPU_HIT)
+//      ju.io.bhr.en := input(BPU_HIT)
       ju.io.bhr.din := input(BHR)
       service[IfDescription].bpu.io.calibrate.branchHistoryRegister := ju.io.bhr.dout
       // using for delay slot

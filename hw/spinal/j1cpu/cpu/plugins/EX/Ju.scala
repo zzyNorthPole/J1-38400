@@ -17,7 +17,7 @@ class Ju extends Component {
     val flush = out Bool()
 
     val bhr = new Bundle {
-      val en = in Bool()
+//      val en = in Bool()
       val din = in UInt(2 bits)
       val dout = out UInt(2 bits)
     }
