@@ -3,6 +3,7 @@ package j1cpu
 import j1cpu.axi.AxiCrossbar
 import j1cpu.cpu.plugins.MEM.MemDescription
 import j1cpu.cpu.plugins.WB.WbDescription
+import j1cpu.cpu.signals.Exception
 import j1cpu.cpu.{J1cpu, J1cpuConfig, J1cpuSignal}
 import spinal.core._
 import spinal.lib.bus.amba4.axi.Axi4
@@ -14,7 +15,7 @@ class MyCpuTop extends Component {
     val aclk = in Bool()
     val aresetn = in Bool()
 
-    val ext_int = in Bits(5 bits)
+    val ext_int = in Bits(6 bits)
     val wid = out UInt(4 bits)
     val cpuBus = master(Axi4(J1cpuConfig().axiConfig))
     val arlock = out Bits(2 bits)
