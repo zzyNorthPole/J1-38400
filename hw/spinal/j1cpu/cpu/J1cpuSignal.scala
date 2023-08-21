@@ -41,7 +41,7 @@ class J1cpuSignal() {
   // IF to EX
   object PREDICT_PC extends Signal(UInt(32 bits))
   // IF to EX
-  object BPU_HIT extends Signal(Bool())
+//  object BPU_HIT extends Signal(Bool())
   // IF to EX
   object BHR extends Signal(UInt(2 bits))
   // ID to EX
