@@ -43,6 +43,12 @@ case class BpuConfig(
   val tagWidth = 32 - indexWidth - 2
 }
 
+case class WriteQueueConfig(
+  lines: Int
+                           ) {
+
+}
+
 case class J1cpuConfig() {
   val sim = 1
 
@@ -94,5 +100,9 @@ case class J1cpuConfig() {
 
   val bpuConfig = BpuConfig(
     lines = 1 << 9
+  )
+
+  val writeQueueConfig = WriteQueueConfig(
+    lines = 1 << 5
   )
 }
