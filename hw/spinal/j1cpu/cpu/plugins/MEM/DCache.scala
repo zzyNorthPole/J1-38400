@@ -85,6 +85,8 @@ class DCache(cacheConfig: CacheConfig, writeQueueConfig: WriteQueueConfig, axiCo
     new Bram(cacheConfig.lines, 1, 0, 2)
   }
 
+  val writeQueue = new WriteQueue(writeQueueConfig, axiConfig)
+
   // we use two stage to accomplish MEM operation load/store
   // MEM1: search in cache for the cache line, search in tlb/mmu for virtual address transform
   // MEM2: compare address and tag, if equal then goto to WB, else use a FSM to fix it
@@ -390,12 +392,23 @@ class DCache(cacheConfig: CacheConfig, writeQueueConfig: WriteQueueConfig, axiCo
       setEntry(stateBoot)
       disableAutoStart()
 
+      val waitForEmpty = new State()
       val writeBackAw = new State()
       val writeBackW = new State()
       val writeBackB = new State()
 
       stateBoot.whenIsActive {
         when(writeBackValid) {
+          when(writeQueue.io.empty) {
+            goto(writeBackAw)
+          }.otherwise {
+            goto(waitForEmpty)
+          }
+        }
+      }
+
+      waitForEmpty.whenIsActive {
+        when(writeQueue.io.empty) {
           goto(writeBackAw)
         }
       }
@@ -434,11 +447,22 @@ class DCache(cacheConfig: CacheConfig, writeQueueConfig: WriteQueueConfig, axiCo
       setEntry(stateBoot)
       disableAutoStart()
 
+      val waitForEmpty = new State()
       val readNewAr = new State()
       val readNewR = new State()
 
       stateBoot.whenIsActive {
         when(readNewValid) {
+          when(writeQueue.io.empty) {
+            goto(readNewAr)
+          }.otherwise {
+            goto(waitForEmpty)
+          }
+        }
+      }
+
+      waitForEmpty.whenIsActive {
+        when(writeQueue.io.empty) {
           goto(readNewAr)
         }
       }
@@ -656,7 +680,6 @@ class DCache(cacheConfig: CacheConfig, writeQueueConfig: WriteQueueConfig, axiCo
     }
 
     val uncachedData = RegInit(U(0, 32 bits))
-    val writeQueue = new WriteQueue(writeQueueConfig, axiConfig)
     val writeQueueInit = new Area {
       writeQueue.io.en := !cached && io.ready && we.orR
       writeQueue.io.din.addr := op.mux(
